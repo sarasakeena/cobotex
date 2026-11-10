@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { formatCategoryName } from "@/lib/severity";
 import { SeverityBadge } from "@/components/SeverityBadge";
-import { StatusBadge } from "@/components/StatusBadge";
 import { CategoryIcon } from "@/components/CategoryIcon";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import {
@@ -85,26 +84,26 @@ export function IncidentTable({
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center p-16 bg-white rounded-xl border border-slate-200">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-red-600 mb-4" />
-        <p className="text-sm text-slate-500 font-medium">Loading emergency incidents...</p>
+      <div className="flex flex-col items-center justify-center p-16 bg-cardBg rounded-2xl border border-slate/40">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate/40 border-t-burgundy mb-4" />
+        <p className="text-sm text-navy/80 font-bold">Loading emergency incidents...</p>
       </div>
     );
   }
 
   if (incidents.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center p-16 bg-white rounded-xl border border-slate-200 text-center">
-        <div className="h-16 w-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-4">
+      <div className="flex flex-col items-center justify-center p-16 bg-cardBg rounded-2xl border border-slate/40 text-center">
+        <div className="h-16 w-16 rounded-full bg-cream flex items-center justify-center text-slate-dark mb-4 border border-slate/40">
           <AlertCircle className="h-8 w-8" />
         </div>
-        <h3 className="text-lg font-bold text-slate-800">No incidents reported yet</h3>
-        <p className="text-sm text-slate-500 max-w-sm mt-1">
+        <h3 className="text-lg font-bold text-navy">No incidents reported yet</h3>
+        <p className="text-sm text-navy/70 max-w-sm mt-1">
           When reports are submitted from the field, they will immediately appear here for live dispatch and triage.
         </p>
         <Link
           href="/report"
-          className="mt-5 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 transition"
+          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-burgundy px-4 py-2 text-sm font-bold text-cream hover:bg-burgundy-light transition shadow-sm"
         >
           Create First Incident Report
         </Link>
@@ -114,33 +113,35 @@ export function IncidentTable({
 
   return (
     <>
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-2xl border border-slate/40 bg-cardBg shadow-sm">
         <table className="w-full text-left border-collapse text-sm">
           <thead>
-            <tr className="border-b border-slate-200 bg-slate-50/75 text-xs font-semibold uppercase tracking-wider text-slate-500">
-              <th className="py-3.5 px-4">Severity</th>
-              <th className="py-3.5 px-4">Incident Title</th>
-              <th className="py-3.5 px-4">Category</th>
-              <th className="py-3.5 px-4">Location</th>
-              <th className="py-3.5 px-4 text-center">Affected</th>
-              <th className="py-3.5 px-4">Status</th>
-              <th className="py-3.5 px-4">Reported</th>
-              <th className="py-3.5 px-4 text-right">Actions</th>
+            {/* Navy Header Row with Cream Text */}
+            <tr className="bg-navy text-cream text-xs font-bold uppercase tracking-wider border-b border-navy-light">
+              <th className="py-4 px-4">Severity</th>
+              <th className="py-4 px-4">Incident Title</th>
+              <th className="py-4 px-4">Category</th>
+              <th className="py-4 px-4">Location</th>
+              <th className="py-4 px-4 text-center">Affected</th>
+              <th className="py-4 px-4">Status</th>
+              <th className="py-4 px-4">Reported</th>
+              <th className="py-4 px-4 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-200">
+          {/* Slate row dividers */}
+          <tbody className="divide-y divide-slate/30">
             {incidents.map((incident) => {
               const isCritical = incident.severity === "CRITICAL";
               return (
                 <tr
                   key={incident.id}
-                  className={`transition-colors hover:bg-slate-50/80 ${
+                  className={`transition-colors hover:bg-cream/60 ${
                     isCritical
-                      ? "bg-red-50/40 hover:bg-red-50/70 border-l-4 border-l-red-600"
+                      ? "bg-burgundy/5 hover:bg-burgundy/10 border-l-4 border-l-burgundy"
                       : ""
                   }`}
                 >
-                  {/* Severity */}
+                  {/* Severity Badge */}
                   <td className="py-4 px-4 whitespace-nowrap">
                     <SeverityBadge severity={incident.severity} size="sm" />
                   </td>
@@ -149,12 +150,12 @@ export function IncidentTable({
                   <td className="py-4 px-4 min-w-[220px]">
                     <Link
                       href={`/admin/incidents/${incident.id}`}
-                      className="font-semibold text-slate-900 hover:text-red-600 transition flex items-center gap-1.5 group"
+                      className="font-bold text-navy hover:text-burgundy transition flex items-center gap-1.5 group"
                     >
                       <span className="line-clamp-1">{incident.title}</span>
-                      <ExternalLink className="h-3.5 w-3.5 text-slate-400 group-hover:text-red-600 transition shrink-0" />
+                      <ExternalLink className="h-3.5 w-3.5 text-slate group-hover:text-burgundy transition shrink-0" />
                     </Link>
-                    <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">
+                    <p className="text-xs text-navy/70 line-clamp-1 mt-0.5 font-normal">
                       {incident.description}
                     </p>
                   </td>
@@ -166,16 +167,16 @@ export function IncidentTable({
                         category={incident.category}
                         className="h-4 w-4 shrink-0"
                       />
-                      <span className="font-medium text-slate-700">
+                      <span className="font-semibold text-navy">
                         {formatCategoryName(incident.category)}
                       </span>
                     </div>
                   </td>
 
                   {/* Location */}
-                  <td className="py-4 px-4 whitespace-nowrap text-slate-600">
+                  <td className="py-4 px-4 whitespace-nowrap text-navy font-medium">
                     <div className="flex items-center gap-1.5">
-                      <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                      <MapPin className="h-3.5 w-3.5 text-burgundy shrink-0" />
                       <span className="truncate max-w-[150px]">
                         {incident.location}
                       </span>
@@ -185,12 +186,12 @@ export function IncidentTable({
                   {/* People Affected */}
                   <td className="py-4 px-4 whitespace-nowrap text-center">
                     <span
-                      className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold ${
+                      className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-bold ${
                         incident.peopleAffected >= 10
-                          ? "bg-red-100 text-red-700"
+                          ? "bg-burgundy/15 text-burgundy border border-burgundy/30"
                           : incident.peopleAffected > 0
-                          ? "bg-slate-100 text-slate-800"
-                          : "text-slate-400"
+                          ? "bg-cream text-navy border border-slate/40"
+                          : "text-slate-dark"
                       }`}
                     >
                       <Users className="h-3 w-3" />
@@ -207,14 +208,14 @@ export function IncidentTable({
                         onChange={(e) =>
                           handleStatusSelect(incident.id, e.target.value)
                         }
-                        className={`text-xs font-semibold rounded-md border py-1 px-2 transition focus:outline-none focus:ring-2 focus:ring-red-500 cursor-pointer ${
+                        className={`text-xs font-bold rounded-lg border py-1 px-2.5 transition focus:outline-none focus:ring-2 focus:ring-burgundy cursor-pointer ${
                           incident.status === "RESOLVED"
                             ? "bg-emerald-50 text-emerald-800 border-emerald-300"
                             : incident.status === "IN_PROGRESS"
                             ? "bg-blue-50 text-blue-800 border-blue-300"
                             : incident.status === "PENDING"
                             ? "bg-amber-50 text-amber-800 border-amber-300"
-                            : "bg-slate-50 text-slate-700 border-slate-300"
+                            : "bg-slate-100 text-slate-800 border-slate-300"
                         } disabled:opacity-50`}
                       >
                         <option value="REPORTED">Reported</option>
@@ -223,15 +224,15 @@ export function IncidentTable({
                         <option value="RESOLVED">Resolved</option>
                       </select>
                       {updatingId === incident.id && (
-                        <div className="h-3.5 w-3.5 rounded-full border-2 border-red-500 border-t-transparent animate-spin" />
+                        <div className="h-3.5 w-3.5 rounded-full border-2 border-burgundy border-t-transparent animate-spin" />
                       )}
                     </div>
                   </td>
 
                   {/* Time Reported */}
-                  <td className="py-4 px-4 whitespace-nowrap text-xs text-slate-500">
+                  <td className="py-4 px-4 whitespace-nowrap text-xs text-navy/70 font-medium">
                     <div className="flex items-center gap-1.5">
-                      <Clock className="h-3.5 w-3.5 text-slate-400" />
+                      <Clock className="h-3.5 w-3.5 text-slate" />
                       <span>{formatDate(incident.createdAt)}</span>
                     </div>
                   </td>
@@ -241,7 +242,7 @@ export function IncidentTable({
                     <div className="flex items-center justify-end gap-2">
                       <Link
                         href={`/admin/incidents/${incident.id}`}
-                        className="rounded-lg p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition"
+                        className="rounded-lg p-1.5 text-navy hover:text-burgundy hover:bg-cream transition"
                         title="View details"
                       >
                         <ExternalLink className="h-4 w-4" />
@@ -249,7 +250,7 @@ export function IncidentTable({
                       <button
                         type="button"
                         onClick={() => setSelectedDeleteId(incident.id)}
-                        className="rounded-lg p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
+                        className="rounded-lg p-1.5 text-slate-dark hover:text-burgundy hover:bg-burgundy/10 transition"
                         title="Delete incident"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -279,4 +280,3 @@ export function IncidentTable({
     </>
   );
 }
-

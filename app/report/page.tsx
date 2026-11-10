@@ -23,18 +23,21 @@ import {
   AlertCircle,
   Phone,
   Sparkles,
+  Edit3,
+  RotateCcw,
 } from "lucide-react";
 import { CategoryType, SeverityType, formatCategoryName } from "@/lib/severity";
 import { SeverityBadge } from "@/components/SeverityBadge";
+import { CategoryIcon } from "@/components/CategoryIcon";
 import { parseVoiceReport, ParsedVoiceReport } from "@/lib/voiceParser";
 
 // Dynamically import Leaflet Map Picker without SSR
 const MapPicker = dynamic(() => import("@/components/MapPicker"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-64 rounded-xl bg-slate-100 flex items-center justify-center border border-slate-300 text-slate-400 text-sm">
+    <div className="w-full h-64 rounded-2xl bg-cream flex items-center justify-center border border-slate/40 text-navy/70 text-sm font-semibold">
       <div className="flex items-center gap-2">
-        <div className="h-4 w-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+        <div className="h-4 w-4 border-2 border-burgundy border-t-transparent rounded-full animate-spin" />
         <span>Loading map interface...</span>
       </div>
     </div>
@@ -45,44 +48,13 @@ const CATEGORIES: {
   value: CategoryType;
   label: string;
   icon: any;
-  colorClass: string;
 }[] = [
-  {
-    value: "FIRE",
-    label: "Fire Emergency",
-    icon: Flame,
-    colorClass: "hover:border-orange-500 text-orange-600 bg-orange-50/50",
-  },
-  {
-    value: "ROAD_ACCIDENT",
-    label: "Road Accident",
-    icon: Car,
-    colorClass: "hover:border-amber-500 text-amber-600 bg-amber-50/50",
-  },
-  {
-    value: "MEDICAL",
-    label: "Medical Emergency",
-    icon: HeartPulse,
-    colorClass: "hover:border-rose-500 text-rose-600 bg-rose-50/50",
-  },
-  {
-    value: "FLOOD",
-    label: "Flood",
-    icon: Waves,
-    colorClass: "hover:border-blue-500 text-blue-600 bg-blue-50/50",
-  },
-  {
-    value: "BUILDING_COLLAPSE",
-    label: "Building Collapse",
-    icon: Building2,
-    colorClass: "hover:border-purple-500 text-purple-600 bg-purple-50/50",
-  },
-  {
-    value: "OTHER",
-    label: "Other Emergencies",
-    icon: AlertTriangle,
-    colorClass: "hover:border-slate-500 text-slate-600 bg-slate-50/50",
-  },
+  { value: "FIRE", label: "Fire Emergency", icon: Flame },
+  { value: "ROAD_ACCIDENT", label: "Road Accident", icon: Car },
+  { value: "MEDICAL", label: "Medical Emergency", icon: HeartPulse },
+  { value: "FLOOD", label: "Flood", icon: Waves },
+  { value: "BUILDING_COLLAPSE", label: "Building Collapse", icon: Building2 },
+  { value: "OTHER", label: "Other Emergencies", icon: AlertTriangle },
 ];
 
 const CATEGORY_TAGS: Record<CategoryType, string[]> = {
@@ -123,6 +95,10 @@ interface SubmittedReport {
 }
 
 export default function ReportPage() {
+  // Mode: "speak" (default) or "manual"
+  const [mode, setMode] = useState<"speak" | "manual">("speak");
+  const [hasSpoken, setHasSpoken] = useState(false);
+
   // 1. Category (single select)
   const [category, setCategory] = useState<CategoryType>("FIRE");
 
@@ -309,7 +285,6 @@ export default function ReportPage() {
           setCoords(pos);
           setLocationSource("gps");
 
-          // Reverse geocode with Nominatim (first 3 comma-separated parts)
           const revAddress = await reverseGeocodeCoords(pos.lat, pos.lng);
           if (revAddress) {
             setAddress(revAddress);
@@ -376,6 +351,7 @@ export default function ReportPage() {
     async (fullTranscript: string) => {
       if (!fullTranscript.trim()) return;
 
+      setHasSpoken(true);
       const parsed: ParsedVoiceReport = parseVoiceReport(fullTranscript);
       const newVoiceFields = new Set<string>();
 
@@ -414,7 +390,7 @@ export default function ReportPage() {
         newVoiceFields.add("phone");
       }
 
-      // 5. Address text (NEVER the whole transcript)
+      // 5. Address text
       let resolvedAddress = address;
       if (parsed.addressText && !userModified.location && !parsed.useCurrentLocation) {
         setAddress(parsed.addressText);
@@ -422,7 +398,7 @@ export default function ReportPage() {
         newVoiceFields.add("address");
       }
 
-      // 6. Description Textarea
+      // 6. Description
       if (!userModified.description) {
         setDescription(fullTranscript);
         newVoiceFields.add("description");
@@ -430,13 +406,11 @@ export default function ReportPage() {
 
       setVoiceFilledFields(newVoiceFields);
 
-      // 7. Location flow
-      // If useCurrentLocation is true (or no valid addressText), skip forward geocoding and call GPS immediately
+      // Location resolution
       let finalCoords = coords;
 
       if (parsed.useCurrentLocation || !parsed.addressText) {
         if (!userModified.location) {
-          // Clear any speech transcript leakage from address text field
           setAddress("");
         }
         requestCurrentLocation((gpsCoords) => {
@@ -458,7 +432,6 @@ export default function ReportPage() {
             triggerAutoSubmitCountdown();
           }
         } else {
-          // Geocode failed -> call GPS immediately
           requestCurrentLocation((gpsCoords) => {
             finalCoords = gpsCoords;
             if (resolvedCategory && gpsCoords) {
@@ -546,7 +519,6 @@ export default function ReportPage() {
           );
         }
 
-        // 3-second silence detector
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         silenceTimerRef.current = setTimeout(() => {
           if (recognitionRef.current && isListening) {
@@ -580,7 +552,7 @@ export default function ReportPage() {
     }
   };
 
-  // Clean up timers & recognition on unmount
+  // Clean up timers on unmount
   useEffect(() => {
     return () => {
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
@@ -629,7 +601,6 @@ export default function ReportPage() {
     const peopleCount = getPeopleAffectedCount();
     const categoryLabel = formatCategoryName(category);
 
-    // Sanitize address: never send description or junk phrases as address
     const cleanAddr = address.trim();
     const isJunkAddr =
       !cleanAddr ||
@@ -696,6 +667,8 @@ export default function ReportPage() {
 
   const resetForm = () => {
     cancelCountdown();
+    setMode("speak");
+    setHasSpoken(false);
     setCategory("FIRE");
     setCoords(null);
     setAddress("");
@@ -723,26 +696,26 @@ export default function ReportPage() {
   // CONFIRMATION SCREEN
   if (submittedIncident) {
     return (
-      <div className="max-w-xl mx-auto px-4 py-12">
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-xl text-center">
-          <div className="h-16 w-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4">
+      <div className="max-w-xl mx-auto px-4 py-12 bg-cream">
+        <div className="rounded-2xl border border-slate/40 bg-cardBg p-6 sm:p-8 shadow-xl text-center">
+          <div className="h-16 w-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4 border border-emerald-300">
             <Check className="h-8 w-8 stroke-[3]" />
           </div>
 
-          <h2 className="text-2xl font-extrabold text-slate-900">
+          <h2 className="text-2xl font-black text-navy">
             Emergency Report Submitted
           </h2>
-          <p className="mt-1 text-sm text-slate-500 font-mono">
+          <p className="mt-1 text-sm text-navy/70 font-mono font-bold">
             ID #{submittedIncident.id}
           </p>
 
-          <div className="my-6 flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-slate-50 border border-slate-200">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Assigned Priority
+          <div className="my-6 flex flex-col items-center justify-center gap-2 p-5 rounded-2xl bg-cream/70 border border-slate/30">
+            <span className="text-xs font-bold text-slate-dark uppercase tracking-wider">
+              Assigned Priority Tier
             </span>
             <SeverityBadge severity={submittedIncident.severity} size="lg" />
             {submittedIncident.severityScore !== undefined && (
-              <span className="text-xs text-slate-500 mt-1">
+              <span className="text-xs text-navy/70 mt-1 font-semibold">
                 Triage Score: <strong>{submittedIncident.severityScore} pts</strong>
               </span>
             )}
@@ -751,7 +724,7 @@ export default function ReportPage() {
           <div className="flex flex-col sm:flex-row gap-3 mt-6">
             <Link
               href="/admin"
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 transition"
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-navy px-4 py-3 text-sm font-bold text-cream hover:bg-navy-light transition shadow-sm"
             >
               <span>View On Dashboard</span>
               <ExternalLink className="h-4 w-4" />
@@ -760,7 +733,7 @@ export default function ReportPage() {
             <button
               type="button"
               onClick={resetForm}
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white hover:bg-red-700 transition"
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-burgundy px-4 py-3 text-sm font-bold text-cream hover:bg-burgundy-light transition shadow-sm"
             >
               <PlusCircle className="h-4 w-4" />
               <span>Report Another</span>
@@ -772,39 +745,66 @@ export default function ReportPage() {
   }
 
   return (
-    <div className="max-w-xl mx-auto px-4 py-6 sm:py-10 pb-28">
-      {/* Top Banner */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <span>Fast Emergency Intake</span>
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">
-              Smart Voice
-            </span>
-          </h1>
-          <p className="text-xs text-slate-500">
-            Speak everything in one go or tap manually.
-          </p>
+    <div className="max-w-xl mx-auto px-4 py-6 sm:py-10 pb-28 bg-cream">
+      {/* Top Banner / Mode Toggle Header */}
+      <div className="flex flex-col gap-3 mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-black text-navy tracking-tight">
+              Emergency Intake
+            </h1>
+            <p className="text-xs text-slate-dark font-medium">
+              Voice-first rapid response reporting
+            </p>
+          </div>
+
+          {/* Segmented Mode Toggle */}
+          <div className="inline-flex rounded-xl p-1 bg-cardBg border border-slate/40 shadow-sm">
+            <button
+              type="button"
+              onClick={() => {
+                cancelCountdown();
+                setMode("speak");
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                mode === "speak"
+                  ? "bg-burgundy text-cream shadow-sm"
+                  : "text-navy hover:text-burgundy"
+              }`}
+            >
+              Speak
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                cancelCountdown();
+                setMode("manual");
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                mode === "manual"
+                  ? "bg-burgundy text-cream shadow-sm"
+                  : "text-navy hover:text-burgundy"
+              }`}
+            >
+              Manual
+            </button>
+          </div>
         </div>
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold border border-red-200">
-          <span className="h-2 w-2 rounded-full bg-red-600 animate-pulse" />
-          ACTIVE
-        </span>
       </div>
 
       {/* AUTO-SUBMIT COUNTDOWN BANNER */}
       {countdown !== null && (
-        <div className="mb-6 rounded-2xl border-2 border-red-600 bg-red-600 text-white p-4 shadow-xl animate-fadeIn">
+        <div className="mb-6 rounded-2xl border-2 border-burgundy bg-burgundy text-cream p-4 shadow-xl animate-fadeIn">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-white text-red-600 flex items-center justify-center font-extrabold text-lg shrink-0 shadow-inner">
+              <div className="h-10 w-10 rounded-full bg-cream text-burgundy flex items-center justify-center font-black text-lg shrink-0 shadow-inner">
                 {countdown}
               </div>
               <div>
-                <p className="font-extrabold text-sm sm:text-base">
+                <p className="font-black text-sm sm:text-base text-cream">
                   Report ready. Submitting in {countdown}...
                 </p>
-                <p className="text-[11px] text-red-100">
+                <p className="text-[11px] text-cream/80 font-medium">
                   Touch any field to pause &amp; edit.
                 </p>
               </div>
@@ -814,21 +814,24 @@ export default function ReportPage() {
               <button
                 type="button"
                 onClick={submitReportDirect}
-                className="rounded-xl bg-white px-3.5 py-2 text-xs font-extrabold text-red-600 hover:bg-slate-100 transition shadow-sm"
+                className="rounded-xl bg-cream px-3.5 py-2 text-xs font-black text-burgundy hover:bg-cream-light transition shadow-sm"
               >
                 Submit now
               </button>
               <button
                 type="button"
-                onClick={cancelCountdown}
-                className="rounded-xl bg-red-800 px-3.5 py-2 text-xs font-bold text-white hover:bg-red-900 transition"
+                onClick={() => {
+                  cancelCountdown();
+                  setMode("manual");
+                }}
+                className="rounded-xl border-2 border-cream bg-transparent px-3.5 py-2 text-xs font-bold text-cream hover:bg-cream hover:text-burgundy transition"
               >
-                Edit
+                Edit details
               </button>
               <button
                 type="button"
                 onClick={cancelCountdown}
-                className="p-1.5 text-xs text-red-200 hover:text-white underline"
+                className="p-1.5 text-xs text-cream/70 hover:text-cream underline"
               >
                 Cancel
               </button>
@@ -839,18 +842,18 @@ export default function ReportPage() {
 
       {/* MISSING FIELD NOTICE */}
       {missingFieldNotice && (
-        <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4 text-xs font-medium text-amber-900 flex items-start gap-2.5 shadow-sm">
+        <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-xs font-bold text-amber-900 flex items-start gap-2.5 shadow-sm">
           <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="font-bold">{missingFieldNotice}</p>
-            <p className="text-amber-700 mt-0.5">
+            <p className="font-black">{missingFieldNotice}</p>
+            <p className="text-amber-800 font-medium mt-0.5">
               Please drop a pin on the map or use GPS to confirm incident coordinates.
             </p>
           </div>
           <button
             type="button"
             onClick={() => setMissingFieldNotice(null)}
-            className="text-amber-600 hover:text-amber-900 p-0.5"
+            className="text-amber-700 hover:text-amber-900 p-0.5"
           >
             <X className="h-4 w-4" />
           </button>
@@ -858,500 +861,594 @@ export default function ReportPage() {
       )}
 
       {submitError && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3.5 flex items-start gap-2.5 text-xs text-red-800 font-medium">
+        <div className="mb-4 rounded-2xl border border-red-300 bg-red-50 p-4 flex items-start gap-2.5 text-xs text-red-800 font-bold">
           <AlertCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
           <span>{submitError}</span>
         </div>
       )}
 
-      <form onSubmit={handleManualFormSubmit} className="space-y-6">
-        {/* 1. CATEGORY: 6 large icon tiles in a 2x3 grid */}
-        <section
-          className={`rounded-2xl border bg-white p-4 sm:p-5 shadow-sm transition ${
-            voiceFilledFields.has("category")
-              ? "border-red-400 ring-2 ring-red-100"
-              : "border-slate-200"
-          }`}
-          onClick={cancelCountdown}
-        >
-          <div className="flex items-center justify-between mb-3">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-              1. Emergency Category <span className="text-red-500">*</span>
-            </label>
-            {voiceFilledFields.has("category") && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 flex items-center gap-1">
-                <Sparkles className="h-3 w-3" /> Auto-detected
-              </span>
-            )}
+      {/* 3. VOICE-FIRST HERO SECTION (VISUALLY DOMINANT) */}
+      <section className="rounded-2xl border border-slate/40 bg-cardBg p-6 sm:p-8 shadow-sm text-center mb-6">
+        <div className="flex justify-end mb-2">
+          {/* Language Selector */}
+          <div className="inline-flex items-center gap-1.5 text-xs">
+            <span className="text-slate-dark font-semibold">Lang:</span>
+            <select
+              value={speechLang}
+              onChange={(e) => setSpeechLang(e.target.value)}
+              disabled={isListening}
+              className="rounded-xl border border-slate/40 bg-cream/80 px-2 py-1 text-xs text-navy font-bold focus:outline-none"
+            >
+              {SPEECH_LANGUAGES.map((lang) => (
+                <option key={lang.code} value={lang.code}>
+                  {lang.label}
+                </option>
+              ))}
+            </select>
           </div>
+        </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            {CATEGORIES.map((cat) => {
-              const Icon = cat.icon;
-              const isSelected = category === cat.value;
-              return (
-                <button
-                  key={cat.value}
-                  type="button"
-                  onClick={() => handleCategorySelect(cat.value)}
-                  className={`relative flex flex-col items-center justify-center p-4 rounded-xl border-2 text-center transition-all ${
-                    isSelected
-                      ? "border-red-600 bg-red-50/80 shadow-md ring-2 ring-red-500/20 text-slate-900 font-bold"
-                      : "border-slate-200 bg-slate-50/60 hover:bg-slate-100 text-slate-700"
-                  }`}
-                >
-                  <Icon
-                    className={`h-7 w-7 mb-1.5 ${
-                      isSelected ? "text-red-600" : "text-slate-500"
-                    }`}
-                  />
-                  <span className="text-xs sm:text-sm font-bold leading-tight">
-                    {cat.label}
-                  </span>
-                  {isSelected && (
-                    <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-red-600" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* 2. LOCATION */}
-        <section
-          className={`rounded-2xl border bg-white p-4 sm:p-5 shadow-sm space-y-3 transition ${
-            !hasLocation && missingFieldNotice
-              ? "border-red-500 ring-2 ring-red-200"
-              : voiceFilledFields.has("location")
-              ? "border-red-400 ring-2 ring-red-100"
-              : "border-slate-200"
-          }`}
-          onClick={cancelCountdown}
-        >
-          <div className="flex items-center justify-between">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-              2. Incident Location <span className="text-red-500">*</span>
-            </label>
-            {coords && (
-              <span className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
-                <Check className="h-3 w-3" /> Position Set
-              </span>
-            )}
-          </div>
-
-          {/* Quick GPS Button */}
+        {/* Large Burgundy Mic Button (120px-140px) */}
+        <div className="relative inline-flex items-center justify-center my-4">
+          {isListening && (
+            <div className="absolute inset-0 rounded-full bg-burgundy/30 animate-ping" />
+          )}
           <button
             type="button"
-            onClick={handleGetCurrentLocation}
-            disabled={locLoading}
-            className="w-full flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 active:bg-slate-950 transition shadow-sm disabled:opacity-50 cursor-pointer"
+            onClick={toggleSpeechRecognition}
+            aria-label="Toggle voice recording"
+            className={`relative flex items-center justify-center w-32 h-32 sm:w-36 sm:h-36 rounded-full bg-burgundy text-cream shadow-xl transition-transform hover:scale-105 active:scale-95 cursor-pointer ${
+              isListening ? "pulse-burgundy ring-8 ring-burgundy/30" : ""
+            }`}
           >
-            {locLoading ? (
-              <>
-                <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Acquiring Coordinates &amp; Address...</span>
-              </>
+            {isListening ? (
+              <MicOff className="h-14 w-14 text-cream animate-pulse" />
             ) : (
-              <>
-                <Navigation className="h-4 w-4 text-red-400" />
-                <span>Use My Current Location</span>
-              </>
+              <Mic className="h-14 w-14 text-cream" />
             )}
           </button>
+        </div>
 
-          {/* Coordinates Confirmation Chip */}
-          {coords && (
-            <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-3.5 py-2 text-xs text-emerald-800">
-              <div className="flex items-center gap-1.5 font-mono">
-                <MapPin className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                <span>
-                  {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
-                </span>
-                <span className="text-[10px] text-emerald-600 font-sans">
-                  ({locationSource === "geocode" ? "Address Pin" : "GPS Pin"})
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowMap(!showMap)}
-                  className="text-[11px] font-bold underline hover:text-emerald-900"
-                >
-                  {showMap ? "Hide Map" : "Adjust Pin"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCoords(null);
-                    setLocationSource(null);
-                  }}
-                  className="p-0.5 text-emerald-700 hover:text-red-600"
-                  title="Remove location coordinates"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          )}
+        {/* Heading & State */}
+        <h2 className="text-xl sm:text-2xl font-black text-navy mt-2">
+          {isListening ? "Listening..." : "Tap and tell us what happened"}
+        </h2>
 
-          {locError && (
-            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5 flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-              <span>{locError}</span>
-            </div>
-          )}
+        {/* Example sentence in slate */}
+        <p className="mt-2 text-xs sm:text-sm text-slate-dark max-w-md mx-auto leading-relaxed font-medium">
+          Try saying: &ldquo;Fire in a building near Tambaram railway station, six people trapped and one is unconscious, my number is 98765 43210&rdquo;
+        </p>
 
-          {/* Leaflet Map Picker */}
-          {(showMap || (!coords && locError)) && (
-            <div className="pt-2">
-              <MapPicker
-                position={coords}
-                onPositionChange={async (pos) => {
-                  cancelCountdown();
-                  setCoords(pos);
-                  setLocationSource("manual");
-                  setLocError(null);
-                  setMissingFieldNotice(null);
-
-                  // Reverse geocode pinned coordinates
-                  const revAddress = await reverseGeocodeCoords(pos.lat, pos.lng);
-                  if (revAddress) {
-                    setAddress(revAddress);
-                  } else {
-                    setAddress(`${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)}`);
-                  }
-                }}
-              />
-            </div>
-          )}
-
-          {/* Address / Landmark text */}
-          <div className="pt-1">
-            <input
-              type="text"
-              placeholder="Address, landmark or intersection (e.g. near Tambaram railway station)"
-              value={address}
-              onChange={(e) => {
-                cancelCountdown();
-                setUserModified((p) => ({ ...p, location: true }));
-                setAddress(e.target.value);
-              }}
-              className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
-            />
+        {/* Live transcript in cream box with navy border */}
+        {interimText && (
+          <div className="mt-4 rounded-2xl bg-cream border-2 border-navy p-4 text-navy font-bold text-sm shadow-inner text-left animate-fadeIn">
+            <span className="text-burgundy font-black mr-2">&bull; Hearing:</span>
+            {interimText}...
           </div>
-        </section>
+        )}
 
-        {/* 3. PEOPLE AFFECTED */}
-        <section
-          className={`rounded-2xl border bg-white p-4 sm:p-5 shadow-sm space-y-3 transition ${
-            voiceFilledFields.has("people")
-              ? "border-red-400 ring-2 ring-red-100"
-              : "border-slate-200"
-          }`}
-          onClick={cancelCountdown}
-        >
-          <div className="flex items-center justify-between">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-              3. Number of People Affected
-            </label>
-            {voiceFilledFields.has("people") && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 flex items-center gap-1">
-                <Sparkles className="h-3 w-3" /> Voice filled
-              </span>
-            )}
+        {speechError && (
+          <div className="mt-4 rounded-xl bg-amber-50 border border-amber-300 p-3 text-xs text-amber-900 font-bold">
+            {speechError}
           </div>
+        )}
 
-          <div className="grid grid-cols-4 gap-2">
-            {PEOPLE_PRESETS.map((preset) => {
-              const isSelected =
-                !isExactOpen && selectedPeoplePreset === preset.value;
-              return (
-                <button
-                  key={preset.label}
-                  type="button"
-                  onClick={() => {
-                    cancelCountdown();
-                    setUserModified((p) => ({ ...p, people: true }));
-                    setIsExactOpen(false);
-                    setSelectedPeoplePreset(preset.value);
-                  }}
-                  className={`py-3 px-2 rounded-xl border text-center font-bold text-sm transition-all ${
-                    isSelected
-                      ? "border-red-600 bg-red-600 text-white shadow-sm"
-                      : "border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800"
-                  }`}
-                >
-                  {preset.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="pt-1 flex items-center justify-between text-xs">
+        {/* Secondary manual switch link below mic */}
+        {mode === "speak" && (
+          <div className="mt-6 pt-4 border-t border-slate/20">
             <button
               type="button"
               onClick={() => {
                 cancelCountdown();
-                setIsExactOpen(!isExactOpen);
+                setMode("manual");
               }}
-              className="text-xs text-slate-500 hover:text-slate-800 font-medium underline"
+              className="text-xs font-bold text-navy hover:text-burgundy underline inline-flex items-center gap-1.5"
             >
-              {isExactOpen ? "Use preset chips" : "Enter exact number instead"}
+              <Edit3 className="h-3.5 w-3.5" />
+              <span>Prefer to type? Fill the form manually</span>
             </button>
-            {isExactOpen && (
-              <input
-                type="number"
-                min="0"
-                placeholder="Exact count"
-                value={exactPeople}
-                onChange={(e) => {
-                  cancelCountdown();
-                  setUserModified((p) => ({ ...p, people: true }));
-                  setExactPeople(e.target.value);
-                }}
-                className="w-28 rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-slate-900 focus:outline-none focus:border-red-500"
-                autoFocus
-              />
+          </div>
+        )}
+      </section>
+
+      {/* IN SPEAK MODE: After speaking, show Summary Card */}
+      {mode === "speak" && hasSpoken && (
+        <section className="rounded-2xl border border-slate/40 bg-cardBg p-5 sm:p-6 shadow-sm mb-6 animate-fadeIn space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate/20">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-burgundy" />
+              <h3 className="text-base font-black text-navy">
+                Extracted Incident Dossier
+              </h3>
+            </div>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-burgundy/10 text-burgundy">
+              Voice Processed
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="rounded-xl bg-cream/70 p-3 border border-slate/30">
+              <span className="text-slate-dark font-bold uppercase tracking-wider text-[10px]">
+                Category
+              </span>
+              <div className="flex items-center gap-1.5 mt-1">
+                <CategoryIcon category={category} className="h-4 w-4" />
+                <span className="font-black text-navy">
+                  {formatCategoryName(category)}
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-cream/70 p-3 border border-slate/30">
+              <span className="text-slate-dark font-bold uppercase tracking-wider text-[10px]">
+                Casualties
+              </span>
+              <p className="font-black text-navy mt-1">
+                {getPeopleAffectedCount()} affected
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-cream/70 p-3 border border-slate/30 col-span-2">
+              <span className="text-slate-dark font-bold uppercase tracking-wider text-[10px]">
+                Reported Location
+              </span>
+              <p className="font-bold text-navy mt-1">
+                {address || (coords ? `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}` : "Pending GPS position")}
+              </p>
+            </div>
+
+            {selectedTags.length > 0 && (
+              <div className="rounded-xl bg-cream/70 p-3 border border-slate/30 col-span-2">
+                <span className="text-slate-dark font-bold uppercase tracking-wider text-[10px]">
+                  Detected Tags
+                </span>
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  {selectedTags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-navy text-cream"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
-        </section>
 
-        {/* 4. QUICK TAGS */}
-        <section
-          className={`rounded-2xl border bg-white p-4 sm:p-5 shadow-sm space-y-2 transition ${
-            voiceFilledFields.has("tags")
-              ? "border-red-400 ring-2 ring-red-100"
-              : "border-slate-200"
-          }`}
-          onClick={cancelCountdown}
-        >
-          <div className="flex items-center justify-between">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-              4. Quick Tags ({formatCategoryName(category)})
-            </label>
-            <div className="flex items-center gap-2">
-              {voiceFilledFields.has("tags") && (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 flex items-center gap-1">
-                  <Sparkles className="h-3 w-3" /> Voice matched
+          {/* Action Buttons for voice summary */}
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            <button
+              type="button"
+              onClick={submitReportDirect}
+              disabled={isSubmitting || !category || !hasLocation}
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-burgundy px-4 py-3 text-sm font-black text-cream hover:bg-burgundy-light transition shadow-sm disabled:opacity-50"
+            >
+              <PlusCircle className="h-4 w-4" />
+              <span>Submit now</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                cancelCountdown();
+                setMode("manual");
+              }}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border-2 border-navy px-4 py-3 text-sm font-bold text-navy hover:bg-navy hover:text-cream transition"
+            >
+              <Edit3 className="h-4 w-4" />
+              <span>Edit details</span>
+            </button>
+            <button
+              type="button"
+              onClick={toggleSpeechRecognition}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate/40 bg-cream/60 px-3 py-3 text-sm font-bold text-navy hover:bg-cream transition"
+              title="Speak again"
+            >
+              <RotateCcw className="h-4 w-4" />
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* MANUAL FORM SECTIONS (Shown in manual mode or when user clicks Edit details) */}
+      {mode === "manual" && (
+        <form onSubmit={handleManualFormSubmit} className="space-y-6 animate-fadeIn">
+          {/* 1. CATEGORY: 6 tiles in 2x3 grid */}
+          <section
+            className={`rounded-2xl border bg-cardBg p-4 sm:p-5 shadow-sm transition ${
+              voiceFilledFields.has("category")
+                ? "border-burgundy ring-2 ring-burgundy/20"
+                : "border-slate/40"
+            }`}
+            onClick={cancelCountdown}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-dark">
+                1. Emergency Category <span className="text-burgundy">*</span>
+              </label>
+              {voiceFilledFields.has("category") && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-burgundy/10 text-burgundy flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" /> Auto-detected
                 </span>
               )}
-              <span className="text-[11px] text-slate-400">Multi-select</span>
             </div>
-          </div>
 
-          <div className="flex flex-wrap gap-2 pt-1">
-            {CATEGORY_TAGS[category].map((tag) => {
-              const isSelected = selectedTags.includes(tag);
-              return (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => handleTagToggle(tag)}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
-                    isSelected
-                      ? "border-red-600 bg-red-600 text-white shadow-sm"
-                      : "border-slate-200 bg-slate-100 hover:bg-slate-200 text-slate-700"
-                  }`}
-                >
-                  {isSelected ? `✓ ${tag}` : `+ ${tag}`}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* 5. VOICE MESSAGE + SMART PARSE */}
-        <section
-          className={`rounded-2xl border bg-white p-4 sm:p-5 shadow-sm space-y-3 transition ${
-            isListening ? "border-red-500 ring-4 ring-red-200/50" : "border-slate-200"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-              <span>5. Smart Voice Report</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-50 text-red-600 font-bold border border-red-200">
-                Auto-fill
-              </span>
-            </label>
-
-            {/* Language Selector */}
-            <div className="flex items-center gap-1.5 text-xs">
-              <span className="text-slate-400">Lang:</span>
-              <select
-                value={speechLang}
-                onChange={(e) => setSpeechLang(e.target.value)}
-                disabled={isListening}
-                className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 focus:outline-none"
-              >
-                {SPEECH_LANGUAGES.map((lang) => (
-                  <option key={lang.code} value={lang.code}>
-                    {lang.label}
-                  </option>
-                ))}
-              </select>
+            <div className="grid grid-cols-2 gap-3">
+              {CATEGORIES.map((cat) => {
+                const Icon = cat.icon;
+                const isSelected = category === cat.value;
+                return (
+                  <button
+                    key={cat.value}
+                    type="button"
+                    onClick={() => handleCategorySelect(cat.value)}
+                    className={`relative flex flex-col items-center justify-center p-4 rounded-2xl border transition-all ${
+                      isSelected
+                        ? "border-burgundy bg-burgundy text-cream shadow-md font-black"
+                        : "border-slate/40 bg-cream/40 hover:bg-cream text-navy font-bold"
+                    }`}
+                  >
+                    <Icon
+                      className={`h-7 w-7 mb-1.5 ${
+                        isSelected ? "text-cream" : "text-navy"
+                      }`}
+                    />
+                    <span className="text-xs sm:text-sm font-bold leading-tight">
+                      {cat.label}
+                    </span>
+                    {isSelected && (
+                      <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-cream" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
-          </div>
+          </section>
 
-          {/* Big Mic Button */}
-          <button
-            type="button"
-            onClick={toggleSpeechRecognition}
-            className={`w-full flex items-center justify-center gap-3 rounded-2xl py-4 px-4 font-bold text-sm transition-all shadow-sm ${
-              isListening
-                ? "bg-red-600 text-white ring-4 ring-red-400/40 animate-pulse"
-                : "bg-red-50 text-red-700 hover:bg-red-100 border border-red-200"
+          {/* 2. LOCATION */}
+          <section
+            className={`rounded-2xl border bg-cardBg p-4 sm:p-5 shadow-sm space-y-3 transition ${
+              !hasLocation && missingFieldNotice
+                ? "border-burgundy ring-2 ring-burgundy/20"
+                : voiceFilledFields.has("location")
+                ? "border-burgundy ring-2 ring-burgundy/10"
+                : "border-slate/40"
             }`}
+            onClick={cancelCountdown}
           >
-            {isListening ? (
-              <>
-                <MicOff className="h-5 w-5" />
-                <span>Listening... Tap again or pause 3s to auto-fill</span>
-              </>
-            ) : (
-              <>
-                <Mic className="h-5 w-5 text-red-600" />
-                <span>Tap and describe the emergency</span>
-              </>
-            )}
-          </button>
-
-          {/* Helper sentence hint */}
-          <div className="rounded-xl bg-slate-50 border border-slate-200 p-2.5 text-[11px] text-slate-600 flex items-start gap-2">
-            <Sparkles className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-bold text-slate-800">
-                Speak everything in one go:
-              </span>{" "}
-              <span>
-                &ldquo;Fire in a building near Tambaram railway station, six people trapped and one is unconscious, my number is 98765 43210&rdquo;
-              </span>
-            </div>
-          </div>
-
-          {interimText && (
-            <p className="text-xs text-red-600 italic bg-red-50/50 p-2 rounded-lg border border-red-100 animate-pulse">
-              {interimText}...
-            </p>
-          )}
-
-          {speechError && (
-            <p className="text-xs text-amber-700 bg-amber-50 p-2 rounded-lg border border-amber-200">
-              {speechError}
-            </p>
-          )}
-
-          {/* Editable Description Textarea */}
-          <textarea
-            rows={3}
-            placeholder="Voice transcript or typed notes: specific hazards, trapped persons, gas leaks..."
-            value={description}
-            onChange={(e) => {
-              cancelCountdown();
-              setUserModified((p) => ({ ...p, description: true }));
-              setDescription(e.target.value);
-            }}
-            className="w-full rounded-xl border border-slate-300 p-3 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 leading-relaxed"
-          />
-        </section>
-
-        {/* 6. OPTIONAL CONTACT & PHOTO */}
-        <section
-          className={`rounded-2xl border bg-white p-4 sm:p-5 shadow-sm space-y-4 transition ${
-            voiceFilledFields.has("phone")
-              ? "border-red-400 ring-2 ring-red-100"
-              : "border-slate-200"
-          }`}
-          onClick={cancelCountdown}
-        >
-          <div className="flex items-center justify-between">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-              6. Contact &amp; Photo (Optional)
-            </label>
-            {voiceFilledFields.has("phone") && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 flex items-center gap-1">
-                <Sparkles className="h-3 w-3" /> Voice extracted
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Phone className="h-4 w-4 text-slate-400 shrink-0" />
-            <input
-              type="tel"
-              placeholder="Your phone number (e.g. 9876543210)"
-              value={contactInfo}
-              onChange={(e) => {
-                cancelCountdown();
-                setUserModified((p) => ({ ...p, phone: true }));
-                setContactInfo(e.target.value);
-              }}
-              className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-red-500"
-            />
-          </div>
-
-          {/* Photo attachment */}
-          <div>
-            {photoData ? (
-              <div className="relative inline-block border rounded-xl overflow-hidden shadow-sm">
-                <img
-                  src={photoData}
-                  alt="Upload preview"
-                  className="h-24 w-auto object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    cancelCountdown();
-                    setPhotoData(null);
-                  }}
-                  className="absolute top-1 right-1 bg-slate-900/80 text-white rounded-full p-1 hover:bg-red-600 transition"
-                  title="Remove photo"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ) : (
-              <label className="inline-flex items-center gap-2 rounded-xl border border-dashed border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer transition">
-                <Camera className="h-4 w-4 text-slate-500" />
-                <span>Add photo from camera / file</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={handlePhotoUpload}
-                />
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-dark">
+                2. Incident Location <span className="text-burgundy">*</span>
               </label>
-            )}
-          </div>
-        </section>
+              {coords && (
+                <span className="text-[11px] font-bold text-emerald-700 flex items-center gap-1">
+                  <Check className="h-3 w-3" /> Position Set
+                </span>
+              )}
+            </div>
 
-        {/* 7. SUBMIT: Sticky at bottom on mobile */}
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 p-3 sm:static sm:bg-transparent sm:border-0 sm:p-0">
-          <div className="max-w-xl mx-auto">
+            {/* Quick GPS Button */}
             <button
-              type="submit"
-              disabled={isSubmitting || !category || !hasLocation}
-              className="w-full inline-flex items-center justify-center gap-2.5 rounded-2xl bg-red-600 py-4 px-6 text-base font-extrabold text-white hover:bg-red-700 active:bg-red-800 shadow-lg shadow-red-600/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              type="button"
+              onClick={handleGetCurrentLocation}
+              disabled={locLoading}
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-navy px-4 py-3 text-sm font-bold text-cream hover:bg-navy-light active:bg-navy-hover transition shadow-sm disabled:opacity-50 cursor-pointer"
             >
-              {isSubmitting ? (
+              {locLoading ? (
                 <>
-                  <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Submitting Emergency Report...</span>
+                  <div className="h-4 w-4 border-2 border-cream border-t-transparent rounded-full animate-spin" />
+                  <span>Acquiring Coordinates &amp; Address...</span>
                 </>
               ) : (
                 <>
-                  <PlusCircle className="h-5 w-5" />
-                  <span>
-                    Submit Emergency Report{" "}
-                    {!hasLocation ? "(Location required)" : ""}
-                  </span>
+                  <Navigation className="h-4 w-4 text-cream" />
+                  <span>Use My Current Location</span>
                 </>
               )}
             </button>
+
+            {/* Coordinates Confirmation Chip */}
+            {coords && (
+              <div className="flex items-center justify-between bg-cream border border-slate/40 rounded-xl px-3.5 py-2 text-xs text-navy font-bold">
+                <div className="flex items-center gap-1.5 font-mono">
+                  <MapPin className="h-3.5 w-3.5 text-burgundy shrink-0" />
+                  <span>
+                    {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
+                  </span>
+                  <span className="text-[10px] text-slate-dark font-sans font-medium">
+                    ({locationSource === "geocode" ? "Address Pin" : "GPS Pin"})
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowMap(!showMap)}
+                    className="text-[11px] font-bold underline hover:text-burgundy"
+                  >
+                    {showMap ? "Hide Map" : "Adjust Pin"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCoords(null);
+                      setLocationSource(null);
+                    }}
+                    className="p-0.5 text-slate-dark hover:text-burgundy"
+                    title="Remove coordinates"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {locError && (
+              <div className="text-xs text-amber-900 bg-amber-50 border border-amber-300 rounded-xl p-3 flex items-start gap-2 font-medium">
+                <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+                <span>{locError}</span>
+              </div>
+            )}
+
+            {/* Leaflet Map Picker */}
+            {(showMap || (!coords && locError)) && (
+              <div className="pt-2">
+                <MapPicker
+                  position={coords}
+                  onPositionChange={async (pos) => {
+                    cancelCountdown();
+                    setCoords(pos);
+                    setLocationSource("manual");
+                    setLocError(null);
+                    setMissingFieldNotice(null);
+
+                    const revAddress = await reverseGeocodeCoords(pos.lat, pos.lng);
+                    if (revAddress) {
+                      setAddress(revAddress);
+                    } else {
+                      setAddress(`${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)}`);
+                    }
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Address text */}
+            <div className="pt-1">
+              <input
+                type="text"
+                placeholder="Address, landmark or intersection (e.g. near Tambaram railway station)"
+                value={address}
+                onChange={(e) => {
+                  cancelCountdown();
+                  setUserModified((p) => ({ ...p, location: true }));
+                  setAddress(e.target.value);
+                }}
+                className="w-full rounded-xl border border-slate/40 px-3.5 py-2.5 text-xs text-navy placeholder-slate-dark focus:outline-none focus:border-burgundy focus:ring-1 focus:ring-burgundy bg-cream/40 font-medium"
+              />
+            </div>
+          </section>
+
+          {/* 3. PEOPLE AFFECTED */}
+          <section
+            className={`rounded-2xl border bg-cardBg p-4 sm:p-5 shadow-sm space-y-3 transition ${
+              voiceFilledFields.has("people")
+                ? "border-burgundy ring-2 ring-burgundy/20"
+                : "border-slate/40"
+            }`}
+            onClick={cancelCountdown}
+          >
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-dark">
+                3. Number of People Affected
+              </label>
+              {voiceFilledFields.has("people") && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-burgundy/10 text-burgundy flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" /> Voice filled
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-4 gap-2">
+              {PEOPLE_PRESETS.map((preset) => {
+                const isSelected =
+                  !isExactOpen && selectedPeoplePreset === preset.value;
+                return (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => {
+                      cancelCountdown();
+                      setUserModified((p) => ({ ...p, people: true }));
+                      setIsExactOpen(false);
+                      setSelectedPeoplePreset(preset.value);
+                    }}
+                    className={`py-3 px-2 rounded-xl border text-center font-bold text-sm transition-all ${
+                      isSelected
+                        ? "border-navy bg-navy text-cream shadow-sm font-black"
+                        : "border-slate/40 bg-cream/40 hover:bg-cream text-navy"
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="pt-1 flex items-center justify-between text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  cancelCountdown();
+                  setIsExactOpen(!isExactOpen);
+                }}
+                className="text-xs text-navy font-bold hover:text-burgundy underline"
+              >
+                {isExactOpen ? "Use preset chips" : "Enter exact number instead"}
+              </button>
+              {isExactOpen && (
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="Exact count"
+                  value={exactPeople}
+                  onChange={(e) => {
+                    cancelCountdown();
+                    setUserModified((p) => ({ ...p, people: true }));
+                    setExactPeople(e.target.value);
+                  }}
+                  className="w-28 rounded-xl border border-slate/40 px-2.5 py-1 text-xs text-navy focus:outline-none focus:border-burgundy bg-cream font-bold"
+                  autoFocus
+                />
+              )}
+            </div>
+          </section>
+
+          {/* 4. QUICK TAGS */}
+          <section
+            className={`rounded-2xl border bg-cardBg p-4 sm:p-5 shadow-sm space-y-2 transition ${
+              voiceFilledFields.has("tags")
+                ? "border-burgundy ring-2 ring-burgundy/20"
+                : "border-slate/40"
+            }`}
+            onClick={cancelCountdown}
+          >
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-dark">
+                4. Quick Tags ({formatCategoryName(category)})
+              </label>
+              <div className="flex items-center gap-2">
+                {voiceFilledFields.has("tags") && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-burgundy/10 text-burgundy flex items-center gap-1">
+                    <Sparkles className="h-3 w-3" /> Voice matched
+                  </span>
+                )}
+                <span className="text-[11px] text-slate-dark font-medium">Multi-select</span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              {CATEGORY_TAGS[category].map((tag) => {
+                const isSelected = selectedTags.includes(tag);
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => handleTagToggle(tag)}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+                      isSelected
+                        ? "border-navy bg-navy text-cream shadow-sm"
+                        : "border-slate/40 bg-cream/40 hover:bg-cream text-navy"
+                    }`}
+                  >
+                    {isSelected ? `✓ ${tag}` : `+ ${tag}`}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* 5. DESCRIPTION TEXTAREA */}
+          <section className="rounded-2xl border border-slate/40 bg-cardBg p-4 sm:p-5 shadow-sm space-y-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-dark">
+              5. Incident Details &amp; Transcript
+            </label>
+            <textarea
+              rows={3}
+              placeholder="Incident situation notes: specific hazards, trapped persons, injuries..."
+              value={description}
+              onChange={(e) => {
+                cancelCountdown();
+                setUserModified((p) => ({ ...p, description: true }));
+                setDescription(e.target.value);
+              }}
+              className="w-full rounded-xl border border-slate/40 p-3 text-xs text-navy placeholder-slate-dark focus:outline-none focus:border-burgundy focus:ring-1 focus:ring-burgundy leading-relaxed bg-cream/40 font-medium"
+            />
+          </section>
+
+          {/* 6. OPTIONAL CONTACT & PHOTO */}
+          <section className="rounded-2xl border border-slate/40 bg-cardBg p-4 sm:p-5 shadow-sm space-y-4">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-dark">
+              6. Contact &amp; Photo (Optional)
+            </label>
+
+            <div className="flex items-center gap-2">
+              <Phone className="h-4 w-4 text-navy shrink-0" />
+              <input
+                type="tel"
+                placeholder="Your phone number (e.g. 9876543210)"
+                value={contactInfo}
+                onChange={(e) => {
+                  cancelCountdown();
+                  setUserModified((p) => ({ ...p, phone: true }));
+                  setContactInfo(e.target.value);
+                }}
+                className="flex-1 rounded-xl border border-slate/40 px-3 py-2 text-xs text-navy placeholder-slate-dark focus:outline-none focus:border-burgundy bg-cream/40 font-medium"
+              />
+            </div>
+
+            <div>
+              {photoData ? (
+                <div className="relative inline-block border border-slate/40 rounded-2xl overflow-hidden shadow-sm">
+                  <img
+                    src={photoData}
+                    alt="Upload preview"
+                    className="h-24 w-auto object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      cancelCountdown();
+                      setPhotoData(null);
+                    }}
+                    className="absolute top-1 right-1 bg-navy/80 text-cream rounded-full p-1 hover:bg-burgundy transition"
+                    title="Remove photo"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <label className="inline-flex items-center gap-2 rounded-xl border border-dashed border-slate px-3.5 py-2 text-xs font-bold text-navy hover:bg-cream cursor-pointer transition">
+                  <Camera className="h-4 w-4 text-burgundy" />
+                  <span>Add photo from camera / file</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handlePhotoUpload}
+                  />
+                </label>
+              )}
+            </div>
+          </section>
+
+          {/* 7. SUBMIT BUTTON: Sticky on mobile */}
+          <div className="fixed bottom-0 left-0 right-0 z-40 bg-cardBg/95 backdrop-blur-md border-t border-slate/30 p-3 sm:static sm:bg-transparent sm:border-0 sm:p-0">
+            <div className="max-w-xl mx-auto">
+              <button
+                type="submit"
+                disabled={isSubmitting || !category || !hasLocation}
+                className="w-full inline-flex items-center justify-center gap-2.5 rounded-2xl bg-burgundy py-4 px-6 text-base font-black text-cream hover:bg-burgundy-light active:bg-burgundy-hover shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="h-5 w-5 border-2 border-cream border-t-transparent rounded-full animate-spin" />
+                    <span>Submitting Emergency Report...</span>
+                  </>
+                ) : (
+                  <>
+                    <PlusCircle className="h-5 w-5" />
+                    <span>
+                      Submit Emergency Report{" "}
+                      {!hasLocation ? "(Location required)" : ""}
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
-        </div>
-      </form>
+        </form>
+      )}
     </div>
   );
 }

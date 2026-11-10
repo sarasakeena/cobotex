@@ -15,12 +15,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen flex flex-col bg-slate-50 text-slate-900 antialiased">
+      <body className="min-h-screen flex flex-col bg-cream text-navy antialiased">
         <Header />
         <main className="flex-1">{children}</main>
-        <footer className="border-t border-slate-200 bg-white py-6 text-center text-xs text-slate-500">
+        <footer className="border-t border-slate/30 bg-cardBg py-6 text-center text-xs text-navy/70">
           <div className="max-w-7xl mx-auto px-4">
-            <p>
+            <p className="font-medium">
               CRISISPULSE Emergency Response Platform &bull; Round 1: Emergency Incident Reporting &amp; Monitoring
             </p>
           </div>
@@ -29,4 +29,3 @@ export default function RootLayout({
     </html>
   );
 }
-

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  Calendar,
   Clock,
   MapPin,
   Users,
@@ -158,26 +157,26 @@ export default function IncidentDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-16 flex flex-col items-center justify-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-300 border-t-red-600 mb-4" />
-        <p className="text-sm font-medium text-slate-500">Loading incident dossier...</p>
+      <div className="max-w-4xl mx-auto px-4 py-16 flex flex-col items-center justify-center bg-cream">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate/40 border-t-burgundy mb-4" />
+        <p className="text-sm font-bold text-navy">Loading incident dossier...</p>
       </div>
     );
   }
 
   if (!incident) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-16 text-center">
-        <div className="h-16 w-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-4">
+      <div className="max-w-2xl mx-auto px-4 py-16 text-center bg-cream">
+        <div className="h-16 w-16 rounded-2xl bg-burgundy/10 text-burgundy flex items-center justify-center mx-auto mb-4 border border-burgundy/20">
           <AlertTriangle className="h-8 w-8" />
         </div>
-        <h2 className="text-2xl font-bold text-slate-900">Incident Not Found</h2>
-        <p className="mt-2 text-sm text-slate-500">
+        <h2 className="text-2xl font-black text-navy">Incident Not Found</h2>
+        <p className="mt-2 text-sm text-navy/70 font-medium">
           The requested emergency report does not exist or may have been deleted.
         </p>
         <Link
           href="/admin"
-          className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 transition"
+          className="mt-6 inline-flex items-center gap-2 rounded-xl bg-navy px-5 py-2.5 text-sm font-bold text-cream hover:bg-navy-light transition shadow-sm"
         >
           <ArrowLeft className="h-4 w-4" />
           <span>Return to Dashboard</span>
@@ -192,25 +191,25 @@ export default function IncidentDetailPage() {
     typeof incident.longitude === "number";
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 bg-cream">
       {/* Toast */}
       {toast && (
         <div
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-xl px-4 py-3 shadow-xl transition-all border ${
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl px-4 py-3 shadow-xl transition-all border ${
             toast.type === "success"
-              ? "bg-slate-900 text-white border-slate-700"
-              : "bg-red-600 text-white border-red-700"
+              ? "bg-navy text-cream border-slate/40"
+              : "bg-burgundy text-cream border-burgundy-light"
           }`}
         >
           {toast.type === "success" ? (
             <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
           ) : (
-            <AlertTriangle className="h-5 w-5 text-white shrink-0" />
+            <AlertTriangle className="h-5 w-5 text-cream shrink-0" />
           )}
-          <span className="text-sm font-medium">{toast.message}</span>
+          <span className="text-sm font-bold">{toast.message}</span>
           <button
             onClick={() => setToast(null)}
-            className="ml-2 text-slate-400 hover:text-white"
+            className="ml-2 text-cream/70 hover:text-cream"
           >
             <X className="h-4 w-4" />
           </button>
@@ -221,7 +220,7 @@ export default function IncidentDetailPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <Link
           href="/admin"
-          className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition"
+          className="inline-flex items-center gap-2 text-sm font-bold text-navy hover:text-burgundy transition"
         >
           <ArrowLeft className="h-4 w-4" />
           <span>Back to Dashboard</span>
@@ -231,7 +230,7 @@ export default function IncidentDetailPage() {
           <button
             type="button"
             onClick={() => setShowDeleteModal(true)}
-            className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 active:bg-red-200 transition"
+            className="inline-flex items-center gap-2 rounded-xl border border-burgundy/40 bg-burgundy/10 px-3.5 py-2 text-sm font-bold text-burgundy hover:bg-burgundy hover:text-cream transition shadow-sm"
           >
             <Trash2 className="h-4 w-4" />
             <span>Delete Incident</span>
@@ -241,35 +240,35 @@ export default function IncidentDetailPage() {
 
       {/* Incident Header Card */}
       <div
-        className={`rounded-2xl border bg-white p-6 sm:p-8 shadow-sm transition ${
+        className={`rounded-2xl border bg-cardBg p-6 sm:p-8 shadow-sm transition ${
           isCritical
-            ? "border-red-300 ring-2 ring-red-100 bg-gradient-to-br from-white via-red-50/20 to-white"
-            : "border-slate-200"
+            ? "border-burgundy ring-2 ring-burgundy/20"
+            : "border-slate/40"
         }`}
       >
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <SeverityBadge severity={incident.severity} size="lg" />
           <StatusBadge status={incident.status} size="lg" />
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-cream text-navy text-xs font-bold border border-slate/40">
             <CategoryIcon category={incident.category} className="h-4 w-4" />
             <span>{formatCategoryName(incident.category)}</span>
           </div>
         </div>
 
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+        <h1 className="text-2xl sm:text-3xl font-black text-navy tracking-tight">
           {incident.title}
         </h1>
 
-        <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-500">
+        <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-navy/70 font-medium">
           <span className="flex items-center gap-1">
-            <Clock className="h-3.5 w-3.5 text-slate-400" />
+            <Clock className="h-3.5 w-3.5 text-slate" />
             Reported: {formatDate(incident.createdAt)}
           </span>
           <span className="flex items-center gap-1">
-            <Activity className="h-3.5 w-3.5 text-slate-400" />
+            <Activity className="h-3.5 w-3.5 text-slate" />
             Last Updated: {formatDate(incident.updatedAt)}
           </span>
-          <span className="font-mono text-slate-400">ID: {incident.id}</span>
+          <span className="font-mono text-slate-dark">ID: {incident.id}</span>
         </div>
       </div>
 
@@ -278,28 +277,28 @@ export default function IncidentDetailPage() {
         {/* Left Column (2 Cols): Detailed Breakdown */}
         <div className="lg:col-span-2 space-y-6">
           {/* Incident Description */}
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
-              <Layers className="h-4 w-4 text-slate-500" />
+          <div className="rounded-2xl border border-slate/40 bg-cardBg p-6 shadow-sm">
+            <h2 className="text-base font-black text-navy mb-3 flex items-center gap-2">
+              <Layers className="h-4 w-4 text-burgundy" />
               <span>Incident Description &amp; Situation Details</span>
             </h2>
-            <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 rounded-lg p-4 border border-slate-100 font-normal">
+            <div className="text-sm text-navy leading-relaxed whitespace-pre-wrap bg-cream/60 rounded-xl p-4 border border-slate/30 font-medium">
               {incident.description}
             </div>
           </div>
 
           {/* Incident Photo (if present) */}
           {incident.photo && (
-            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
-                <ImageIcon className="h-4 w-4 text-slate-500" />
+            <div className="rounded-2xl border border-slate/40 bg-cardBg p-6 shadow-sm">
+              <h2 className="text-base font-black text-navy mb-3 flex items-center gap-2">
+                <ImageIcon className="h-4 w-4 text-burgundy" />
                 <span>Field Photo Evidence</span>
               </h2>
-              <div className="overflow-hidden rounded-lg border border-slate-200 max-w-md">
+              <div className="overflow-hidden rounded-xl border border-slate/40 max-w-md bg-cream/40 p-1">
                 <img
                   src={incident.photo}
                   alt="Incident Scene"
-                  className="w-full h-auto object-cover max-h-72"
+                  className="w-full h-auto object-cover max-h-72 rounded-lg"
                 />
               </div>
             </div>
@@ -307,16 +306,16 @@ export default function IncidentDetailPage() {
 
           {/* Quick Tags Section */}
           {incident.tags && incident.tags.length > 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
-                <Tag className="h-4 w-4 text-red-500" />
+            <div className="rounded-2xl border border-slate/40 bg-cardBg p-6 shadow-sm">
+              <h2 className="text-base font-black text-navy mb-3 flex items-center gap-2">
+                <Tag className="h-4 w-4 text-burgundy" />
                 <span>Incident Tags</span>
               </h2>
               <div className="flex flex-wrap gap-2">
                 {incident.tags.map((tag, idx) => (
                   <span
                     key={idx}
-                    className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200"
+                    className="inline-flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-bold bg-navy text-cream border border-navy"
                   >
                     #{tag}
                   </span>
@@ -326,77 +325,77 @@ export default function IncidentDetailPage() {
           )}
 
           {/* Key Parameters: Location & Coordinates */}
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-base font-bold text-slate-900 mb-4">
+          <div className="rounded-2xl border border-slate/40 bg-cardBg p-6 shadow-sm">
+            <h2 className="text-base font-black text-navy mb-4">
               Location &amp; Coordinates
             </h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Location Text / Address */}
-              <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
-                <div className="flex items-center gap-2 text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">
-                  <MapPin className="h-4 w-4 text-red-500" />
+              <div className="rounded-xl border border-slate/30 bg-cream/60 p-4">
+                <div className="flex items-center gap-2 text-slate-dark text-xs font-bold uppercase tracking-wider mb-1">
+                  <MapPin className="h-4 w-4 text-burgundy" />
                   <span>Reported Location</span>
                 </div>
-                <p className="text-base font-semibold text-slate-900 mt-1">
+                <p className="text-base font-bold text-navy mt-1">
                   {incident.location}
                 </p>
                 {incident.address && incident.address !== incident.location && (
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="text-xs text-navy/70 mt-1 font-medium">
                     Address: {incident.address}
                   </p>
                 )}
               </div>
 
               {/* Coordinates with Google Maps link */}
-              <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
-                <div className="flex items-center gap-2 text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">
-                  <MapPin className="h-4 w-4 text-blue-500" />
+              <div className="rounded-xl border border-slate/30 bg-cream/60 p-4">
+                <div className="flex items-center gap-2 text-slate-dark text-xs font-bold uppercase tracking-wider mb-1">
+                  <MapPin className="h-4 w-4 text-navy" />
                   <span>GPS Coordinates</span>
                 </div>
                 {hasCoordinates ? (
                   <div className="mt-1">
-                    <p className="text-sm font-mono font-semibold text-slate-900">
+                    <p className="text-sm font-mono font-bold text-navy">
                       {incident.latitude?.toFixed(5)}, {incident.longitude?.toFixed(5)}
                     </p>
                     <a
                       href={`https://www.google.com/maps?q=${incident.latitude},${incident.longitude}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-red-600 hover:text-red-700 transition"
+                      className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-burgundy hover:underline transition"
                     >
                       <span>Open in Google Maps</span>
                       <ExternalLink className="h-3.5 w-3.5" />
                     </a>
                   </div>
                 ) : (
-                  <p className="text-sm text-slate-400 italic mt-1">
+                  <p className="text-sm text-slate-dark italic mt-1 font-medium">
                     Coordinates not logged
                   </p>
                 )}
               </div>
 
               {/* People Affected */}
-              <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
-                <div className="flex items-center gap-2 text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">
-                  <Users className="h-4 w-4 text-blue-500" />
+              <div className="rounded-xl border border-slate/30 bg-cream/60 p-4">
+                <div className="flex items-center gap-2 text-slate-dark text-xs font-bold uppercase tracking-wider mb-1">
+                  <Users className="h-4 w-4 text-navy" />
                   <span>People Affected</span>
                 </div>
-                <p className="text-base font-semibold text-slate-900 mt-1">
+                <p className="text-base font-bold text-navy mt-1">
                   {incident.peopleAffected}{" "}
-                  <span className="text-xs font-normal text-slate-500">
+                  <span className="text-xs font-medium text-navy/70">
                     {incident.peopleAffected === 1 ? "individual" : "individuals"}
                   </span>
                 </p>
               </div>
 
               {/* Contact Information */}
-              <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
-                <div className="flex items-center gap-2 text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">
-                  <Phone className="h-4 w-4 text-slate-600" />
+              <div className="rounded-xl border border-slate/30 bg-cream/60 p-4">
+                <div className="flex items-center gap-2 text-slate-dark text-xs font-bold uppercase tracking-wider mb-1">
+                  <Phone className="h-4 w-4 text-navy" />
                   <span>Contact Information</span>
                 </div>
-                <p className="text-sm font-medium text-slate-900 mt-1">
+                <p className="text-sm font-bold text-navy mt-1">
                   {incident.contactInfo ? incident.contactInfo : "Not provided"}
                 </p>
               </div>
@@ -404,22 +403,22 @@ export default function IncidentDetailPage() {
           </div>
 
           {/* Severity Classification Reasons */}
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+          <div className="rounded-2xl border border-slate/40 bg-cardBg p-6 shadow-sm">
+            <div className="flex items-center justify-between pb-3 border-b border-slate/20 mb-4">
               <div className="flex items-center gap-2">
-                <Shield className="h-5 w-5 text-red-600" />
-                <h2 className="text-base font-bold text-slate-900">
+                <Shield className="h-5 w-5 text-burgundy" />
+                <h2 className="text-base font-black text-navy">
                   Severity Algorithm Triage Reasons
                 </h2>
               </div>
               {incident.severityScore !== undefined && (
-                <span className="rounded-lg bg-red-50 border border-red-200 px-2.5 py-1 text-xs font-bold text-red-700">
+                <span className="rounded-xl bg-burgundy/10 border border-burgundy/30 px-3 py-1 text-xs font-bold text-burgundy">
                   Score: {incident.severityScore} pts
                 </span>
               )}
             </div>
 
-            <p className="text-xs text-slate-500 mb-4">
+            <p className="text-xs text-navy/70 mb-4 font-medium">
               Pure algorithmic classification breakdown computed from category baseline, casualty scope, keywords, and tags:
             </p>
 
@@ -428,14 +427,14 @@ export default function IncidentDetailPage() {
                 incident.severityReasons.map((reason, idx) => (
                   <li
                     key={idx}
-                    className="flex items-start gap-2.5 text-xs text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-100"
+                    className="flex items-start gap-2.5 text-xs text-navy bg-cream/60 p-2.5 rounded-xl border border-slate/30 font-medium"
                   >
-                    <span className="h-1.5 w-1.5 rounded-full bg-red-600 mt-1.5 shrink-0" />
-                    <span className="font-medium">{reason}</span>
+                    <span className="h-1.5 w-1.5 rounded-full bg-burgundy mt-1.5 shrink-0" />
+                    <span>{reason}</span>
                   </li>
                 ))
               ) : (
-                <li className="text-xs text-slate-400 italic">
+                <li className="text-xs text-slate-dark italic font-medium">
                   Standard classification applied ({incident.severity})
                 </li>
               )}
@@ -446,11 +445,11 @@ export default function IncidentDetailPage() {
         {/* Right Column (1 Col): Status Management */}
         <div className="space-y-6">
           {/* Status Management Box */}
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-base font-bold text-slate-900 mb-1">
+          <div className="rounded-2xl border border-slate/40 bg-cardBg p-6 shadow-sm">
+            <h2 className="text-base font-black text-navy mb-1">
               Update Incident Status
             </h2>
-            <p className="text-xs text-slate-500 mb-4">
+            <p className="text-xs text-navy/70 font-medium mb-4">
               Select status to immediately update dispatch log.
             </p>
 
@@ -465,8 +464,8 @@ export default function IncidentDetailPage() {
                     onClick={() => handleStatusChange(opt.value)}
                     className={`w-full text-left p-3 rounded-xl border transition flex items-center justify-between ${
                       isActive
-                        ? "border-red-500 bg-red-50/40 text-slate-900 font-semibold shadow-sm"
-                        : "border-slate-200 hover:border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                        ? "border-burgundy bg-burgundy/10 text-navy font-black shadow-sm"
+                        : "border-slate/40 hover:border-navy bg-cardBg text-navy hover:bg-cream"
                     } disabled:opacity-50`}
                   >
                     <div>
@@ -479,18 +478,18 @@ export default function IncidentDetailPage() {
                               ? "bg-blue-500"
                               : opt.value === "PENDING"
                               ? "bg-amber-500"
-                              : "bg-slate-400"
+                              : "bg-slate"
                           }`}
                         />
                         <span className="text-sm font-bold">{opt.label}</span>
                       </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5 ml-4.5">
+                      <p className="text-[11px] text-navy/60 font-medium mt-0.5 ml-4.5">
                         {opt.desc}
                       </p>
                     </div>
 
                     {isActive && (
-                      <CheckCircle2 className="h-4 w-4 text-red-600 shrink-0" />
+                      <CheckCircle2 className="h-4 w-4 text-burgundy shrink-0" />
                     )}
                   </button>
                 );
@@ -498,34 +497,34 @@ export default function IncidentDetailPage() {
             </div>
 
             {isUpdatingStatus && (
-              <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-500">
-                <div className="h-3 w-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+              <div className="mt-3 flex items-center justify-center gap-2 text-xs text-navy/70 font-bold">
+                <div className="h-3 w-3 border-2 border-burgundy border-t-transparent rounded-full animate-spin" />
                 <span>Saving status update...</span>
               </div>
             )}
           </div>
 
           {/* Quick Info Box */}
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">
+          <div className="rounded-2xl border border-slate/40 bg-cardBg p-6 shadow-sm">
+            <h3 className="text-xs font-black text-navy uppercase tracking-wider mb-3">
               Incident Metadata
             </h3>
             <div className="space-y-3 text-xs">
-              <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Record ID</span>
-                <span className="font-mono text-slate-700 truncate max-w-[150px]">
+              <div className="flex justify-between border-b border-slate/20 pb-2">
+                <span className="text-navy/70 font-medium">Record ID</span>
+                <span className="font-mono text-navy font-bold truncate max-w-[150px]">
                   {incident.id}
                 </span>
               </div>
-              <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Priority Tier</span>
-                <span className="font-semibold text-slate-800">
+              <div className="flex justify-between border-b border-slate/20 pb-2">
+                <span className="text-navy/70 font-medium">Priority Tier</span>
+                <span className="font-bold text-navy">
                   {incident.severity}
                 </span>
               </div>
-              <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Current Phase</span>
-                <span className="font-semibold text-slate-800">
+              <div className="flex justify-between border-b border-slate/20 pb-2">
+                <span className="text-navy/70 font-medium">Current Phase</span>
+                <span className="font-bold text-navy">
                   {incident.status}
                 </span>
               </div>
