@@ -13,7 +13,7 @@ const VALID_STATUSES = [
   "RESOLVED",
 ];
 
-// GET /api/incidents/[id]
+// GET /api/incidents/[id] - Include primary team, backup teams, and backup requests
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -24,6 +24,26 @@ export async function GET(
       where: { id },
       include: {
         assignedTeam: true,
+        backupTeams: {
+          include: {
+            team: true,
+          },
+        },
+        backupRequests: {
+          include: {
+            requestingTeam: {
+              select: { id: true, code: true, name: true, category: true, memberCount: true },
+            },
+            incidentTeams: {
+              include: {
+                team: {
+                  select: { id: true, code: true, name: true, category: true, memberCount: true },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        },
       },
     });
 
@@ -77,7 +97,7 @@ export async function GET(
   }
 }
 
-// PATCH /api/incidents/[id] - Update status with operational tracking rules
+// PATCH /api/incidents/[id] - Update status with operational tracking rules & reopening logic
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -85,7 +105,7 @@ export async function PATCH(
   try {
     const { id } = params;
     const body = await request.json();
-    const { status } = body;
+    const { status, resolutionNote } = body;
 
     if (!status || !VALID_STATUSES.includes(status)) {
       return NextResponse.json(
@@ -99,7 +119,10 @@ export async function PATCH(
 
     const existing = await prisma.incident.findUnique({
       where: { id },
-      include: { assignedTeam: true },
+      include: {
+        assignedTeam: true,
+        backupTeams: { where: { releasedAt: null } },
+      },
     });
 
     if (!existing) {
@@ -120,6 +143,52 @@ export async function PATCH(
       );
     }
 
+    // Reopening resolved incident to IN_PROGRESS
+    if (existing.status === "RESOLVED" && status === "IN_PROGRESS") {
+      if (!existing.assignedTeamId) {
+        return NextResponse.json(
+          {
+            error:
+              "Cannot reopen incident without an assigned team. Please assign a response team first.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const primaryTeam = await prisma.team.findUnique({
+        where: { id: existing.assignedTeamId },
+      });
+
+      if (!primaryTeam || primaryTeam.status !== "AVAILABLE") {
+        return NextResponse.json(
+          {
+            error: `Primary team ${primaryTeam?.code || ""} is currently busy with another incident. Please reassign an available team before reopening.`,
+          },
+          { status: 409 }
+        );
+      }
+
+      // Reopen in transaction
+      const reopened = await prisma.$transaction(async (tx) => {
+        await tx.team.update({
+          where: { id: primaryTeam.id },
+          data: { status: "BUSY", currentIncidentId: existing.id },
+        });
+
+        return await tx.incident.update({
+          where: { id },
+          data: {
+            status: "IN_PROGRESS",
+            resolvedAt: null,
+            resolutionNote: null,
+          },
+          include: { assignedTeam: true, backupTeams: { include: { team: true } } },
+        });
+      });
+
+      return NextResponse.json(reopened);
+    }
+
     // Rule: Moving to IN_PROGRESS requires an assigned team (clear error otherwise)
     if (status === "IN_PROGRESS" && !existing.assignedTeamId) {
       return NextResponse.json(
@@ -133,26 +202,67 @@ export async function PATCH(
 
     // Run status update in transaction with team state syncing
     const updated = await prisma.$transaction(async (tx) => {
-      // Rule: RESOLVED frees the team (AVAILABLE, currentIncidentId null) but keeps assignment details on incident
-      if (status === "RESOLVED" && existing.assignedTeamId) {
-        await tx.team.update({
-          where: { id: existing.assignedTeamId },
+      const now = new Date();
+
+      // Rule: RESOLVED frees ALL teams on that incident (primary and backup)
+      if (status === "RESOLVED") {
+        if (existing.assignedTeamId) {
+          await tx.team.update({
+            where: { id: existing.assignedTeamId },
+            data: {
+              status: "AVAILABLE",
+              currentIncidentId: null,
+            },
+          });
+        }
+
+        // Free backup teams
+        for (const backup of existing.backupTeams) {
+          await tx.team.update({
+            where: { id: backup.teamId },
+            data: { status: "AVAILABLE", currentIncidentId: null },
+          });
+
+          await tx.incidentTeam.update({
+            where: { id: backup.id },
+            data: { releasedAt: now },
+          });
+        }
+
+        return await tx.incident.update({
+          where: { id },
           data: {
-            status: "AVAILABLE",
-            currentIncidentId: null,
+            status: "RESOLVED",
+            resolvedAt: now,
+            resolutionNote: resolutionNote || existing.resolutionNote || "Resolved by command operator",
           },
+          include: { assignedTeam: true, backupTeams: { include: { team: true } } },
         });
       }
 
-      // Rule: Moving back to REPORTED unassigns
-      if (status === "REPORTED" && existing.assignedTeamId) {
-        await tx.team.update({
-          where: { id: existing.assignedTeamId },
-          data: {
-            status: "AVAILABLE",
-            currentIncidentId: null,
-          },
-        });
+      // Rule: Moving back to REPORTED unassigns primary and backup teams
+      if (status === "REPORTED") {
+        if (existing.assignedTeamId) {
+          await tx.team.update({
+            where: { id: existing.assignedTeamId },
+            data: {
+              status: "AVAILABLE",
+              currentIncidentId: null,
+            },
+          });
+        }
+
+        for (const backup of existing.backupTeams) {
+          await tx.team.update({
+            where: { id: backup.teamId },
+            data: { status: "AVAILABLE", currentIncidentId: null },
+          });
+
+          await tx.incidentTeam.update({
+            where: { id: backup.id },
+            data: { releasedAt: now },
+          });
+        }
 
         return await tx.incident.update({
           where: { id },
@@ -160,10 +270,13 @@ export async function PATCH(
             status: "REPORTED",
             assignedTeamId: null,
             assignedAt: null,
+            enRouteAt: null,
+            arrivedAt: null,
+            resolvedAt: null,
             distanceKm: null,
             etaMinutes: null,
           },
-          include: { assignedTeam: true },
+          include: { assignedTeam: true, backupTeams: { include: { team: true } } },
         });
       }
 
@@ -173,7 +286,7 @@ export async function PATCH(
         data: {
           status: status as any,
         },
-        include: { assignedTeam: true },
+        include: { assignedTeam: true, backupTeams: { include: { team: true } } },
       });
     });
 
@@ -188,7 +301,7 @@ export async function PATCH(
 }
 
 // DELETE /api/incidents/[id]
-// Deleting an incident frees its team
+// Deleting an incident frees its primary and backup teams
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -198,6 +311,7 @@ export async function DELETE(
 
     const existing = await prisma.incident.findUnique({
       where: { id },
+      include: { backupTeams: { where: { releasedAt: null } } },
     });
 
     if (!existing) {
@@ -208,7 +322,7 @@ export async function DELETE(
     }
 
     await prisma.$transaction(async (tx) => {
-      // Free team if assigned
+      // Free primary team if assigned
       if (existing.assignedTeamId) {
         await tx.team.update({
           where: { id: existing.assignedTeamId },
@@ -219,7 +333,18 @@ export async function DELETE(
         });
       }
 
-      // Delete incident
+      // Free backup teams
+      for (const backup of existing.backupTeams) {
+        await tx.team.update({
+          where: { id: backup.teamId },
+          data: {
+            status: "AVAILABLE",
+            currentIncidentId: null,
+          },
+        });
+      }
+
+      // Delete incident (cascades IncidentTeam and BackupRequest)
       await tx.incident.delete({
         where: { id },
       });
@@ -227,7 +352,7 @@ export async function DELETE(
 
     return NextResponse.json({
       success: true,
-      message: "Incident report deleted successfully and response team released",
+      message: "Incident report deleted successfully and all response teams released",
     });
   } catch (error) {
     console.error("Failed to delete incident:", error);

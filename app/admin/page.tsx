@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -19,6 +19,9 @@ import {
   Flame,
   Activity,
   AlertCircle,
+  Radio,
+  Timer,
+  Check,
 } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { CategoryChart } from "@/components/CategoryChart";
@@ -37,6 +40,9 @@ interface DashboardStats {
   availableTeams: number;
   busyTeams: number;
   assignedIncidents: number;
+  pendingBackupCount?: number;
+  avgResponseTime?: string;
+  avgResolutionTime?: string;
   byCategory: { category: string; name: string; count: number }[];
   byStatus: { status: string; name: string; count: number }[];
 }
@@ -44,27 +50,47 @@ interface DashboardStats {
 export default function AdminDashboardPage() {
   const [incidents, setIncidents] = useState<IncidentItem[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [backupRequests, setBackupRequests] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const prevBackupCountRef = useRef<number>(0);
 
   // Filters
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
   const [severityFilter, setSeverityFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
+  const playAlertBeep = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      gain.gain.setValueAtTime(0.18, ctx.currentTime);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.25);
+    } catch {}
+  };
+
   const showToast = (message: string, type: "success" | "error" = "success") => {
     setToast({ message, type });
     setTimeout(() => {
       setToast(null);
-    }, 3500);
+    }, 4000);
   };
 
   const loadData = useCallback(async () => {
     try {
-      setIsLoading(true);
-      const [incidentsRes, statsRes] = await Promise.all([
+      const [incidentsRes, statsRes, backupRes] = await Promise.all([
         fetch("/api/incidents"),
         fetch("/api/stats"),
+        fetch("/api/backup-requests"),
       ]);
 
       if (incidentsRes.ok) {
@@ -76,9 +102,21 @@ export default function AdminDashboardPage() {
         const statsData = await statsRes.json();
         setStats(statsData);
       }
+
+      if (backupRes.ok) {
+        const backupData = await backupRes.json();
+        const pending = backupData.filter((b: any) => b.status === "PENDING");
+        setBackupRequests(pending);
+
+        // Check if new backup request arrived
+        if (pending.length > prevBackupCountRef.current) {
+          playAlertBeep();
+          showToast(`🚨 URGENT: New backup reinforcement requested by field team!`, "error");
+        }
+        prevBackupCountRef.current = pending.length;
+      }
     } catch (err) {
       console.error("Dashboard data load error:", err);
-      showToast("Failed to load dashboard data. Please refresh.", "error");
     } finally {
       setIsLoading(false);
     }
@@ -86,9 +124,12 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     loadData();
+    // Poll every 5 seconds
+    const interval = setInterval(loadData, 5000);
+    return () => clearInterval(interval);
   }, [loadData]);
 
-  // Status Change Handler with rule feedback
+  // Status Change Handler with rule feedback & reopening
   const handleStatusChange = async (id: string, newStatus: string) => {
     try {
       const res = await fetch(`/api/incidents/${id}`, {
@@ -189,7 +230,7 @@ export default function AdminDashboardPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 bg-cream min-h-screen">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-7 bg-cream min-h-screen">
       {/* Toast Notification */}
       {toast && (
         <div
@@ -208,6 +249,39 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
+      {/* RED ALERT BANNER FOR PENDING BACKUP REQUESTS */}
+      {backupRequests.length > 0 && (
+        <div className="p-4 rounded-2xl bg-red-600 text-white shadow-lg border border-red-700 animate-pulse flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <Radio className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider bg-black/30 px-2 py-0.5 rounded">
+                  Reinforcement Alert
+                </span>
+                <span className="text-xs font-bold opacity-90">
+                  {backupRequests.length} pending backup request(s) from field units
+                </span>
+              </div>
+              <p className="text-sm font-extrabold mt-0.5">
+                {backupRequests.map((b) => `${b.requestingTeam?.code} (${b.peopleNeeded} pers.)`).join(", ")}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/admin/incidents/${backupRequests[0].incidentId}`}
+              className="px-4 py-2 rounded-xl bg-white text-red-900 text-xs font-black hover:bg-cream transition shadow-sm"
+            >
+              Fulfill Backup Now &rarr;
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Dashboard Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -216,12 +290,17 @@ export default function AdminDashboardPage() {
             <span className="text-xs font-black uppercase tracking-wider text-slate-dark">
               Live Emergency Command Center
             </span>
+            {backupRequests.length > 0 && (
+              <span className="text-xs font-black px-2 py-0.5 rounded-full bg-red-600 text-white animate-bounce">
+                {backupRequests.length} Backup Requests
+              </span>
+            )}
           </div>
           <h1 className="text-3xl font-black text-navy tracking-tight mt-1">
             Incident Monitoring & Response
           </h1>
           <p className="text-sm text-navy/70 mt-1 font-medium">
-            Dynamic triage queue, unit tracking, and automated response dispatch.
+            Dynamic triage queue, unit tracking, live geospatial routing, and backup coordination.
           </p>
         </div>
 
@@ -237,27 +316,35 @@ export default function AdminDashboardPage() {
           </button>
 
           <Link
+            href="/admin/map"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold border border-slate/40 bg-cardBg text-navy hover:bg-cream transition shadow-2xs"
+          >
+            <Zap className="h-4 w-4 text-burgundy" />
+            <span>Live Map</span>
+          </Link>
+
+          <Link
             href="/admin/teams"
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold border border-navy bg-navy text-cream hover:bg-navy-light transition shadow-sm"
           >
             <Users className="h-4 w-4" />
-            <span>Manage Teams</span>
+            <span>Teams</span>
           </Link>
 
           <Link
-            href="/report"
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-burgundy text-cream hover:bg-burgundy-light active:bg-burgundy-hover transition shadow-sm"
+            href="/team"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold border border-burgundy/30 bg-burgundy/10 text-burgundy hover:bg-burgundy hover:text-cream transition shadow-2xs"
           >
-            <PlusCircle className="h-4 w-4" />
-            <span>Report Incident</span>
+            <Shield className="h-4 w-4" />
+            <span>Field Portal</span>
           </Link>
         </div>
       </div>
 
-      {/* 6 Analytics Stat Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      {/* 8 Analytics Stat Cards (Includes Avg Response Time and Avg Resolution Time) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3.5">
         <StatCard
-          title="Total Incidents"
+          title="Total Reports"
           value={stats?.total ?? 0}
           icon={AlertTriangle}
           variant="default"
@@ -281,7 +368,7 @@ export default function AdminDashboardPage() {
           variant="pending"
         />
         <StatCard
-          title="Assigned / Active"
+          title="Active Dispatches"
           value={stats?.assignedIncidents ?? 0}
           icon={Clock}
           variant="pending"
@@ -291,6 +378,20 @@ export default function AdminDashboardPage() {
           value={stats?.resolvedIncidents ?? (stats?.resolved ?? 0)}
           icon={CheckCircle2}
           variant="resolved"
+        />
+        <StatCard
+          title="Avg Response Time"
+          value={stats?.avgResponseTime ?? "n/a"}
+          subtitle="Assign → Arrive"
+          icon={Timer}
+          variant="info"
+        />
+        <StatCard
+          title="Avg Resolution Time"
+          value={stats?.avgResolutionTime ?? "n/a"}
+          subtitle="Arrive → Resolve"
+          icon={Activity}
+          variant="info"
         />
       </div>
 

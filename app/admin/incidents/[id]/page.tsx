@@ -25,6 +25,11 @@ import {
   Check,
   RotateCcw,
   UserCheck,
+  Radio,
+  Timer,
+  CheckCheck,
+  Play,
+  RotateCw,
 } from "lucide-react";
 import { formatCategoryName } from "@/lib/severity";
 import { SeverityBadge } from "@/components/SeverityBadge";
@@ -70,8 +75,14 @@ interface IncidentDetail {
     longitude: number;
     address?: string | null;
     status: string;
+    speedKmh?: number | null;
+    memberCount?: number;
   } | null;
   assignedAt?: string | null;
+  enRouteAt?: string | null;
+  arrivedAt?: string | null;
+  resolvedAt?: string | null;
+  resolutionNote?: string | null;
   distanceKm?: number | null;
   etaMinutes?: number | null;
   createdAt: string;
@@ -84,6 +95,8 @@ interface IncidentDetail {
     reasons: string[];
     waitingMinutes: number;
   };
+  backupTeams?: any[];
+  backupRequests?: any[];
 }
 
 interface CandidateTeam {
@@ -96,6 +109,7 @@ interface CandidateTeam {
     longitude: number;
     address?: string | null;
     status: string;
+    memberCount?: number;
   };
   distanceKm: number;
   etaMinutes: number;
@@ -123,6 +137,7 @@ export default function IncidentDetailPage() {
   const [isLoadingCandidates, setIsLoadingCandidates] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
+  const [isFulfillingBackup, setIsFulfillingBackup] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
@@ -135,7 +150,6 @@ export default function IncidentDetailPage() {
   const fetchIncident = useCallback(async () => {
     if (!id) return;
     try {
-      setIsLoading(true);
       const res = await fetch(`/api/incidents/${id}`);
       if (!res.ok) {
         throw new Error("Incident not found or failed to load");
@@ -174,6 +188,9 @@ export default function IncidentDetailPage() {
 
   useEffect(() => {
     fetchIncident();
+    // Poll incident state every 5 seconds for live coordinates, speeds, and timeline progression
+    const interval = setInterval(fetchIncident, 5000);
+    return () => clearInterval(interval);
   }, [fetchIncident]);
 
   useEffect(() => {
@@ -232,9 +249,9 @@ export default function IncidentDetailPage() {
     }
   };
 
-  // Status Stepper Change
+  // Status Stepper Change or Reopening
   const handleStatusTransition = async (newStatus: string) => {
-    if (!incident || incident.status === newStatus) return;
+    if (!incident) return;
 
     if (newStatus === "IN_PROGRESS" && !incident.assignedTeamId) {
       showToast("Cannot move to In Progress without an assigned team. Please assign a team first.", "error");
@@ -249,19 +266,60 @@ export default function IncidentDetailPage() {
         body: JSON.stringify({ status: newStatus }),
       });
 
+      const data = await res.json();
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to update status");
+        throw new Error(data.error || "Failed to update status");
       }
 
-      const updated = await res.json();
-      setIncident((prev) => (prev ? { ...prev, status: updated.status } : null));
+      setIncident((prev) => (prev ? { ...prev, status: data.status } : null));
       showToast(`Status updated to ${newStatus.replace("_", " ")}`);
       await fetchIncident();
     } catch (err: any) {
       showToast(err.message || "Failed to update incident status", "error");
     } finally {
       setIsUpdatingStatus(false);
+    }
+  };
+
+  // Fulfill Backup Request
+  const handleFulfillBackup = async (requestId: string) => {
+    try {
+      setIsFulfillingBackup(true);
+      const res = await fetch(`/api/backup-requests/${requestId}/fulfill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to fulfill backup");
+
+      showToast(data.message);
+      await fetchIncident();
+    } catch (err: any) {
+      showToast(err.message || "Failed to fulfill backup request", "error");
+    } finally {
+      setIsFulfillingBackup(false);
+    }
+  };
+
+  // Decline Backup Request
+  const handleDeclineBackup = async (requestId: string) => {
+    try {
+      setIsFulfillingBackup(true);
+      const res = await fetch(`/api/backup-requests/${requestId}/decline`, {
+        method: "POST",
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to decline backup");
+
+      showToast("Backup request marked DECLINED");
+      await fetchIncident();
+    } catch (err: any) {
+      showToast(err.message || "Failed to decline backup request", "error");
+    } finally {
+      setIsFulfillingBackup(false);
     }
   };
 
@@ -286,20 +344,27 @@ export default function IncidentDetailPage() {
     }
   };
 
-  const formatDate = (dateStr?: string | null) => {
-    if (!dateStr) return "N/A";
+  const formatTimeStr = (dateStr?: string | null) => {
+    if (!dateStr) return null;
     try {
       const d = new Date(dateStr);
       return new Intl.DateTimeFormat("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
         hour: "2-digit",
         minute: "2-digit",
+        second: "2-digit",
       }).format(d);
     } catch {
       return dateStr;
     }
+  };
+
+  const formatDurationMs = (ms: number) => {
+    if (ms <= 0) return "0m";
+    const totalSecs = Math.floor(ms / 1000);
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    if (mins === 0) return `${secs}s`;
+    return `${mins}m ${secs}s`;
   };
 
   if (isLoading) {
@@ -339,10 +404,24 @@ export default function IncidentDetailPage() {
 
   const prio = incident.priority;
 
-  // Determine current step index in status stepper
   const currentStepIndex = STATUS_STEPS.findIndex(
     (s) => s.value === incident.status
   );
+
+  // Compute Timeline durations
+  let responseDuration: string | null = null;
+  if (incident.assignedAt && incident.arrivedAt) {
+    const diff = new Date(incident.arrivedAt).getTime() - new Date(incident.assignedAt).getTime();
+    if (diff > 0) responseDuration = formatDurationMs(diff);
+  }
+
+  let onSiteDuration: string | null = null;
+  if (incident.arrivedAt && incident.resolvedAt) {
+    const diff = new Date(incident.resolvedAt).getTime() - new Date(incident.arrivedAt).getTime();
+    if (diff > 0) onSiteDuration = formatDurationMs(diff);
+  }
+
+  const pendingBackupReqs = incident.backupRequests?.filter((b) => b.status === "PENDING") || [];
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 bg-cream min-h-screen">
@@ -375,6 +454,19 @@ export default function IncidentDetailPage() {
         </Link>
 
         <div className="flex items-center gap-2">
+          {/* Reopen Action (if resolved) */}
+          {incident.status === "RESOLVED" && (
+            <button
+              type="button"
+              disabled={isUpdatingStatus}
+              onClick={() => handleStatusTransition("IN_PROGRESS")}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-navy/40 bg-navy text-cream px-3 py-2 text-xs font-bold hover:bg-navy-light transition shadow-2xs"
+            >
+              <RotateCw className="h-3.5 w-3.5" />
+              <span>Reopen Incident</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setShowDeleteModal(true)}
@@ -385,6 +477,56 @@ export default function IncidentDetailPage() {
           </button>
         </div>
       </div>
+
+      {/* BACKUP REQUEST ALERT CARD (if pending backup requested) */}
+      {pendingBackupReqs.length > 0 && (
+        <div className="p-5 rounded-2xl bg-red-600 text-white shadow-xl border border-red-700 animate-pulse space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="h-10 w-10 rounded-xl bg-white/20 flex items-center justify-center">
+                <Radio className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-base font-black uppercase tracking-wide">
+                  Backup Requested by Field Unit
+                </h3>
+                <p className="text-xs text-white/90 font-medium">
+                  Unit {pendingBackupReqs[0].requestingTeam?.code} requested reinforcements for {pendingBackupReqs[0].peopleNeeded} personnel.
+                </p>
+              </div>
+            </div>
+            <span className="text-xs font-black bg-black/40 px-3 py-1 rounded-full uppercase">
+              Urgent Dispatch
+            </span>
+          </div>
+
+          {pendingBackupReqs[0].note && (
+            <div className="p-3 rounded-xl bg-black/20 text-xs font-semibold">
+              Situation Note: &ldquo;{pendingBackupReqs[0].note}&rdquo;
+            </div>
+          )}
+
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              type="button"
+              disabled={isFulfillingBackup}
+              onClick={() => handleFulfillBackup(pendingBackupReqs[0].id)}
+              className="px-4 py-2 rounded-xl bg-white text-red-900 text-xs font-black hover:bg-cream transition shadow-sm"
+            >
+              {isFulfillingBackup ? "Assigning..." : "Assign Next Nearest Team(s)"}
+            </button>
+
+            <button
+              type="button"
+              disabled={isFulfillingBackup}
+              onClick={() => handleDeclineBackup(pendingBackupReqs[0].id)}
+              className="px-3.5 py-2 rounded-xl bg-red-800 text-white text-xs font-bold hover:bg-red-900 transition"
+            >
+              Decline
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Visual Status Stepper */}
       <div className="bg-cardBg rounded-2xl border border-slate/40 p-5 shadow-sm">
@@ -400,7 +542,7 @@ export default function IncidentDetailPage() {
             const isCompleted = currentStepIndex > idx;
             const isCurrent = currentStepIndex === idx;
             const isAvailableForClick =
-              step.value !== "ASSIGNED" && // assigned is done via assign action
+              step.value !== "ASSIGNED" &&
               (step.value !== "IN_PROGRESS" || !!incident.assignedTeamId);
 
             return (
@@ -433,7 +575,7 @@ export default function IncidentDetailPage() {
                   {step.value === "REPORTED"
                     ? "Intake"
                     : step.value === "ASSIGNED"
-                    ? "Unit Dispatched"
+                    ? "Dispatched"
                     : step.value === "IN_PROGRESS"
                     ? "Active on site"
                     : "Resolved"}
@@ -441,6 +583,134 @@ export default function IncidentDetailPage() {
               </button>
             );
           })}
+        </div>
+      </div>
+
+      {/* RESPONSE TIMELINE CARD (Live tracking & per-team progression) */}
+      <div className="bg-cardBg rounded-2xl border border-slate/40 p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-3 border-b border-slate/30">
+          <div>
+            <h3 className="text-sm font-black text-navy flex items-center gap-1.5">
+              <Timer className="h-4 w-4 text-burgundy" />
+              <span>Response Timeline &amp; Tactical Progress</span>
+            </h3>
+            <p className="text-[10px] text-navy/70 font-medium">
+              Live progression timestamps and elapsed operational durations
+            </p>
+          </div>
+
+          {/* Response & On-site Duration Badges */}
+          <div className="flex items-center gap-2 text-xs">
+            {responseDuration && (
+              <span className="bg-cream px-2.5 py-1 rounded-lg border border-slate/40 font-bold text-navy">
+                Response Time: <span className="font-extrabold text-burgundy">{responseDuration}</span>
+              </span>
+            )}
+            {onSiteDuration && (
+              <span className="bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-300 font-bold text-emerald-900">
+                On-Site Time: <span className="font-extrabold">{onSiteDuration}</span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* 5 Timeline Stages: Reported, Assigned, On the way, Arrived, Resolved */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+          {/* Stage 1: Reported */}
+          <div className="p-3 rounded-xl bg-cream border border-slate/30">
+            <span className="text-[10px] font-black uppercase text-slate-dark block mb-1">
+              1. Reported
+            </span>
+            <span className="font-extrabold text-navy">
+              {formatTimeStr(incident.createdAt) || "—"}
+            </span>
+          </div>
+
+          {/* Stage 2: Assigned */}
+          <div className="p-3 rounded-xl bg-cream border border-slate/30">
+            <span className="text-[10px] font-black uppercase text-slate-dark block mb-1">
+              2. Assigned
+            </span>
+            <span className="font-extrabold text-navy">
+              {formatTimeStr(incident.assignedAt) || "Pending"}
+            </span>
+          </div>
+
+          {/* Stage 3: On The Way */}
+          <div className="p-3 rounded-xl bg-cream border border-slate/30">
+            <span className="text-[10px] font-black uppercase text-slate-dark block mb-1">
+              3. On The Way
+            </span>
+            <span className="font-extrabold text-navy">
+              {formatTimeStr(incident.enRouteAt) || (incident.assignedAt ? "Awaiting transmit" : "—")}
+            </span>
+          </div>
+
+          {/* Stage 4: Arrived */}
+          <div className="p-3 rounded-xl bg-cream border border-slate/30">
+            <span className="text-[10px] font-black uppercase text-slate-dark block mb-1">
+              4. Arrived on Site
+            </span>
+            <span className="font-extrabold text-navy">
+              {formatTimeStr(incident.arrivedAt) || (incident.enRouteAt ? "In transit" : "—")}
+            </span>
+          </div>
+
+          {/* Stage 5: Resolved */}
+          <div className="p-3 rounded-xl bg-cream border border-slate/30">
+            <span className="text-[10px] font-black uppercase text-slate-dark block mb-1">
+              5. Resolved
+            </span>
+            <span className="font-extrabold text-emerald-800">
+              {formatTimeStr(incident.resolvedAt) || "Active"}
+            </span>
+          </div>
+        </div>
+
+        {/* Per-Team Progress Chips (Primary + Backup Teams) */}
+        <div className="pt-2 border-t border-slate/30">
+          <span className="text-xs font-black uppercase tracking-wider text-slate-dark block mb-2">
+            Dispatched Response Personnel
+          </span>
+          <div className="flex flex-wrap gap-2.5">
+            {/* Primary Team Chip */}
+            {incident.assignedTeam && (
+              <div className="flex items-center gap-2 p-2 rounded-xl bg-cream border border-slate/40 text-xs">
+                <span className="font-mono font-black text-navy bg-cardBg px-2 py-0.5 rounded border border-slate/40">
+                  {incident.assignedTeam.code}
+                </span>
+                <span className="font-bold text-navy">
+                  Primary ({incident.assignedTeam.memberCount || 4} pers.)
+                </span>
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-navy text-cream">
+                  {incident.arrivedAt ? "On Scene" : incident.enRouteAt ? "En Route" : "Dispatched"}
+                </span>
+                {typeof incident.assignedTeam.speedKmh === "number" && incident.assignedTeam.speedKmh > 0 && (
+                  <span className="text-[10px] font-bold text-emerald-700">
+                    {incident.assignedTeam.speedKmh} km/h
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Backup Team Chips */}
+            {incident.backupTeams?.map((bt: any) => (
+              <div
+                key={bt.id}
+                className="flex items-center gap-2 p-2 rounded-xl bg-purple-50 border border-purple-200 text-xs"
+              >
+                <span className="font-mono font-black text-purple-900 bg-cardBg px-2 py-0.5 rounded border border-purple-300">
+                  {bt.team?.code}
+                </span>
+                <span className="font-bold text-purple-900">
+                  Backup ({bt.team?.memberCount || 4} pers.)
+                </span>
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-purple-700 text-cream">
+                  {bt.arrivedAt ? "On Scene" : bt.enRouteAt ? "En Route" : "Dispatched"}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -477,12 +747,24 @@ export default function IncidentDetailPage() {
             {/* Description */}
             <div className="p-4 rounded-xl bg-cream border border-slate/30">
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-dark mb-1.5">
-                Incident Description & Field Notes
+                Incident Description &amp; Field Notes
               </h3>
               <p className="text-sm font-medium text-navy leading-relaxed whitespace-pre-wrap">
                 {incident.description}
               </p>
             </div>
+
+            {/* Resolution Note if resolved */}
+            {incident.resolutionNote && (
+              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950">
+                <h4 className="text-xs font-black uppercase tracking-wider text-emerald-800 mb-1">
+                  Field Resolution Summary
+                </h4>
+                <p className="text-xs font-bold leading-relaxed">
+                  {incident.resolutionNote}
+                </p>
+              </div>
+            )}
 
             {/* Tags */}
             {incident.tags && incident.tags.length > 0 && (
@@ -604,7 +886,7 @@ export default function IncidentDetailPage() {
                     <Shield className="h-4 w-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black text-navy">Assigned Response Team</h3>
+                    <h3 className="text-sm font-black text-navy">Primary Response Team</h3>
                     <span className="text-[10px] text-slate-dark font-semibold">
                       Active Operational Dispatch
                     </span>
@@ -630,16 +912,16 @@ export default function IncidentDetailPage() {
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-dark font-bold uppercase block">
-                      Dispatched
+                      Personnel
                     </span>
                     <span className="font-bold text-navy">
-                      {formatDate(incident.assignedAt)}
+                      {incident.assignedTeam.memberCount || 4} Members
                     </span>
                   </div>
                   {incident.distanceKm !== null && (
                     <div>
                       <span className="text-[10px] text-slate-dark font-bold uppercase block">
-                        Distance
+                        Remaining Dist.
                       </span>
                       <span className="font-extrabold text-navy">
                         {incident.distanceKm} km
@@ -649,7 +931,7 @@ export default function IncidentDetailPage() {
                   {incident.etaMinutes !== null && (
                     <div>
                       <span className="text-[10px] text-slate-dark font-bold uppercase block">
-                        Est. Arrival
+                        Live ETA
                       </span>
                       <span className="font-black text-emerald-700">
                         ~{incident.etaMinutes} min
@@ -658,9 +940,9 @@ export default function IncidentDetailPage() {
                   )}
                 </div>
 
-                {incident.assignedTeam.address && (
-                  <p className="text-[11px] text-navy/70 pt-1 border-t border-slate/30 font-medium">
-                    Base: {incident.assignedTeam.address}
+                {typeof incident.assignedTeam.speedKmh === "number" && (
+                  <p className="text-[11px] text-slate-dark pt-1 border-t border-slate/30 font-semibold">
+                    Current Speed: <span className="font-black text-navy">{incident.assignedTeam.speedKmh} km/h</span>
                   </p>
                 )}
               </div>
@@ -688,22 +970,20 @@ export default function IncidentDetailPage() {
                   <div>
                     <h3 className="text-sm font-black text-navy">Assign Response Team</h3>
                     <p className="text-[10px] text-navy/70 font-medium">
-                      GPS proximity & suitability dispatch
+                      GPS proximity &amp; suitability dispatch
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Location Missing Warning */}
               {!hasCoordinates ? (
                 <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold space-y-1">
                   <p className="font-black">Location missing</p>
                   <p className="font-medium text-amber-800">
-                    Cannot calculate nearest team distance without GPS coordinates. Add coordinates or select a team manually below.
+                    Cannot calculate nearest team distance without GPS coordinates.
                   </p>
                 </div>
               ) : (
-                /* Auto-Assign Button */
                 <button
                   type="button"
                   disabled={isAssigning || candidates.length === 0}
@@ -717,7 +997,6 @@ export default function IncidentDetailPage() {
                 </button>
               )}
 
-              {/* Ranked Candidate List */}
               <div className="space-y-2 pt-2 border-t border-slate/30">
                 <span className="text-xs font-black uppercase tracking-wider text-slate-dark block">
                   Candidate Units (Top Ranked)
@@ -735,7 +1014,7 @@ export default function IncidentDetailPage() {
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                    {candidates.map((c, idx) => (
+                    {candidates.map((c) => (
                       <div
                         key={c.team.id}
                         className="p-3 rounded-xl bg-cream border border-slate/30 flex items-center justify-between gap-2"
@@ -750,7 +1029,7 @@ export default function IncidentDetailPage() {
                             </span>
                           </div>
                           <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-dark font-semibold">
-                            <span>{c.team.category}</span>
+                            <span>{c.team.category} ({c.team.memberCount || 4} pers.)</span>
                             <span>•</span>
                             <span className="text-navy">{c.distanceKm} km</span>
                             <span>•</span>
@@ -813,7 +1092,7 @@ export default function IncidentDetailPage() {
       <ConfirmModal
         isOpen={showDeleteModal}
         title="Permanently Delete Emergency Report"
-        message={`Are you sure you want to permanently delete this report? Any assigned response team will immediately be released back to AVAILABLE status.`}
+        message={`Are you sure you want to permanently delete this report? Any assigned response teams will immediately be released back to AVAILABLE status.`}
         confirmText="Yes, Delete Report"
         cancelText="Cancel"
         isDanger={true}

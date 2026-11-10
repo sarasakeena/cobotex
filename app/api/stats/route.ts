@@ -15,6 +15,8 @@ export async function GET() {
       inProgressCount,
       availableTeams,
       busyTeams,
+      pendingBackupCount,
+      incidentsWithTimestamps,
       categoryCounts,
       statusCounts,
     ] = await Promise.all([
@@ -26,6 +28,18 @@ export async function GET() {
       prisma.incident.count({ where: { status: "IN_PROGRESS" } }),
       prisma.team.count({ where: { status: "AVAILABLE" } }),
       prisma.team.count({ where: { status: "BUSY" } }),
+      prisma.backupRequest.count({ where: { status: "PENDING" } }),
+      prisma.incident.findMany({
+        where: {
+          assignedAt: { not: null },
+        },
+        select: {
+          assignedAt: true,
+          enRouteAt: true,
+          arrivedAt: true,
+          resolvedAt: true,
+        },
+      }),
       prisma.incident.groupBy({
         by: ["category"],
         _count: {
@@ -40,7 +54,44 @@ export async function GET() {
       }),
     ]);
 
-    // Standard list of all categories
+    // Compute Average Response Time (assignedAt to arrivedAt)
+    let totalResponseMinutes = 0;
+    let responseCount = 0;
+
+    let totalResolutionMinutes = 0;
+    let resolutionCount = 0;
+
+    for (const inc of incidentsWithTimestamps) {
+      if (inc.assignedAt && inc.arrivedAt) {
+        const diffMs = new Date(inc.arrivedAt).getTime() - new Date(inc.assignedAt).getTime();
+        if (diffMs > 0) {
+          totalResponseMinutes += diffMs / (1000 * 60);
+          responseCount++;
+        }
+      }
+
+      if (inc.arrivedAt && inc.resolvedAt) {
+        const diffMs = new Date(inc.resolvedAt).getTime() - new Date(inc.arrivedAt).getTime();
+        if (diffMs > 0) {
+          totalResolutionMinutes += diffMs / (1000 * 60);
+          resolutionCount++;
+        }
+      } else if (inc.assignedAt && inc.resolvedAt) {
+        const diffMs = new Date(inc.resolvedAt).getTime() - new Date(inc.assignedAt).getTime();
+        if (diffMs > 0) {
+          totalResolutionMinutes += diffMs / (1000 * 60);
+          resolutionCount++;
+        }
+      }
+    }
+
+    const avgResponseTime =
+      responseCount > 0 ? `${(totalResponseMinutes / responseCount).toFixed(1)}m` : "n/a";
+
+    const avgResolutionTime =
+      resolutionCount > 0 ? `${(totalResolutionMinutes / resolutionCount).toFixed(1)}m` : "n/a";
+
+    // Standard categories
     const allCategories = [
       "FIRE",
       "ROAD_ACCIDENT",
@@ -61,7 +112,7 @@ export async function GET() {
       count: catMap.get(cat) || 0,
     }));
 
-    // Standard list of all statuses
+    // Standard statuses
     const allStatuses = [
       { status: "REPORTED", name: "Reported" },
       { status: "PENDING", name: "Pending" },
@@ -92,6 +143,9 @@ export async function GET() {
       availableTeams,
       busyTeams,
       assignedIncidents,
+      pendingBackupCount,
+      avgResponseTime,
+      avgResolutionTime,
       byCategory,
       byStatus,
     });

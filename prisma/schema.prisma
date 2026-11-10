@@ -8,40 +8,84 @@ generator client {
 }
 
 model Team {
-  id                String     @id @default(cuid())
-  code              String     @unique // e.g. "FIRE-01"
+  id                String          @id @default(cuid())
+  code              String          @unique // e.g. "FIRE-01"
   name              String
-  category          String     // FIRE | MEDICAL | RESCUE | POLICE | DISASTER
+  category          String          // FIRE | MEDICAL | RESCUE | POLICE | DISASTER
   latitude          Float
   longitude         Float
   address           String?
-  status            String     @default("AVAILABLE") // AVAILABLE | BUSY
+  status            String          @default("AVAILABLE") // AVAILABLE | BUSY
   currentIncidentId String?
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
-  assignedIncidents Incident[]
+  pin               String          @default("1234")
+  memberCount       Int             @default(4)
+  lastLocationAt    DateTime?
+  speedKmh          Float?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  assignedIncidents Incident[]      @relation("PrimaryTeam")
+  backupAssignments IncidentTeam[]
+  backupRequests    BackupRequest[]
 }
 
 model Incident {
-  id             String    @id @default(cuid())
+  id             String          @id @default(cuid())
   title          String
   description    String
-  category       String    // FIRE | ROAD_ACCIDENT | MEDICAL | FLOOD | BUILDING_COLLAPSE | OTHER
+  category       String          // FIRE | ROAD_ACCIDENT | MEDICAL | FLOOD | BUILDING_COLLAPSE | OTHER
   location       String
   latitude       Float?
   longitude      Float?
   address        String?
-  tags           String    @default("[]") // Stored as JSON array string
-  photo          String?   // Optional base64 or photo URL
-  peopleAffected Int       @default(0)
+  tags           String          @default("[]") // Stored as JSON array string
+  photo          String?         // Optional base64 or photo URL
+  peopleAffected Int             @default(0)
   contactInfo    String?
-  severity       String    // LOW | MEDIUM | HIGH | CRITICAL
-  status         String    @default("REPORTED") // REPORTED | PENDING | ASSIGNED | IN_PROGRESS | RESOLVED
+  severity       String          // LOW | MEDIUM | HIGH | CRITICAL
+  status         String          @default("REPORTED") // REPORTED | PENDING | ASSIGNED | IN_PROGRESS | RESOLVED
   assignedTeamId String?
-  assignedTeam   Team?     @relation(fields: [assignedTeamId], references: [id])
+  assignedTeam   Team?           @relation("PrimaryTeam", fields: [assignedTeamId], references: [id])
   assignedAt     DateTime?
+  enRouteAt      DateTime?
+  arrivedAt      DateTime?
+  resolvedAt     DateTime?
+  resolutionNote String?
   distanceKm     Float?
   etaMinutes     Int?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  backupTeams    IncidentTeam[]
+  backupRequests BackupRequest[]
+}
+
+model IncidentTeam {
+  id            String         @id @default(cuid())
+  incidentId    String
+  incident      Incident       @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  teamId        String
+  team          Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  requestId     String?
+  backupRequest BackupRequest? @relation(fields: [requestId], references: [id])
+  assignedAt    DateTime       @default(now())
+  enRouteAt     DateTime?
+  arrivedAt     DateTime?
+  releasedAt    DateTime?
+  distanceKm    Float?
+  etaMinutes    Int?
+}
+
+model BackupRequest {
+  id               String         @id @default(cuid())
+  incidentId       String
+  incident         Incident       @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  teamId           String
+  requestingTeam   Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  peopleNeeded     Int
+  teamType         String?        // FIRE | MEDICAL | RESCUE | POLICE | DISASTER
+  note             String?
+  status           String         @default("PENDING") // PENDING | FULFILLED | DECLINED
+  createdAt        DateTime       @default(now())
+  resolvedAt       DateTime?
+  fulfilledTeamIds String         @default("[]") // JSON string of team IDs
+  incidentTeams    IncidentTeam[]
 }

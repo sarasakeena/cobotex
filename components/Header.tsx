@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Siren, LayoutDashboard, PlusCircle, Users, Map } from "lucide-react";
+import { Siren, LayoutDashboard, PlusCircle, Users, Map, Shield } from "lucide-react";
 
 export function Header() {
   const pathname = usePathname();
@@ -43,7 +43,7 @@ export function Header() {
             <Link
               href="/admin"
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
-                pathname === "/admin" || pathname.startsWith("/admin/incidents")
+                pathname === "/admin" || (pathname.startsWith("/admin/incidents") && !pathname.startsWith("/admin/teams"))
                   ? "bg-navy-light text-cream"
                   : "text-cream/80 hover:text-cream hover:bg-navy-light/60"
               }`}
@@ -77,11 +77,23 @@ export function Header() {
             </Link>
 
             <Link
+              href="/team"
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                pathname.startsWith("/team")
+                  ? "bg-navy-light text-cream"
+                  : "text-cream/80 hover:text-cream hover:bg-navy-light/60"
+              }`}
+            >
+              <Shield className="h-4 w-4 text-burgundy-light" />
+              <span>Team Portal</span>
+            </Link>
+
+            <Link
               href="/report"
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-burgundy text-cream hover:bg-burgundy-light active:bg-burgundy-hover shadow-sm transition ml-1"
             >
               <PlusCircle className="h-4 w-4" />
-              <span>Report Emergency</span>
+              <span>Report</span>
             </Link>
           </nav>
         </div>

@@ -6,6 +6,7 @@ async function main() {
   console.log("Seeding emergency response teams and sample incidents across Chennai...");
 
   // 10 Teams spread across Chennai (2 each for FIRE, MEDICAL, RESCUE, POLICE, DISASTER)
+  // Each has memberCount between 4 and 8, and pin: "1234"
   const teams = [
     {
       code: "FIRE-01",
@@ -15,6 +16,8 @@ async function main() {
       longitude: 80.2341,
       address: "Usman Road, T. Nagar, Chennai",
       status: "AVAILABLE",
+      pin: "1234",
+      memberCount: 6,
     },
     {
       code: "FIRE-02",
@@ -24,6 +27,8 @@ async function main() {
       longitude: 80.2405,
       address: "Poonamallee High Rd, Kilpauk, Chennai",
       status: "AVAILABLE",
+      pin: "1234",
+      memberCount: 6,
     },
     {
       code: "MEDICAL-01",
@@ -33,6 +38,8 @@ async function main() {
       longitude: 80.2785,
       address: "EVR Periyar Salai, Park Town, Chennai",
       status: "AVAILABLE",
+      pin: "1234",
+      memberCount: 4,
     },
     {
       code: "MEDICAL-02",
@@ -42,6 +49,8 @@ async function main() {
       longitude: 80.2524,
       address: "Greams Lane, Thousand Lights, Chennai",
       status: "AVAILABLE",
+      pin: "1234",
+      memberCount: 4,
     },
     {
       code: "RESCUE-01",
@@ -51,6 +60,8 @@ async function main() {
       longitude: 80.2824,
       address: "Kamarajar Promenade, Marina, Chennai",
       status: "AVAILABLE",
+      pin: "1234",
+      memberCount: 8,
     },
     {
       code: "RESCUE-02",
@@ -60,6 +71,8 @@ async function main() {
       longitude: 80.1000,
       address: "GST Road, Tambaram Sanatorium, Chennai",
       status: "AVAILABLE",
+      pin: "1234",
+      memberCount: 8,
     },
     {
       code: "POLICE-01",
@@ -69,6 +82,8 @@ async function main() {
       longitude: 80.2676,
       address: "Kutchery Road, Mylapore, Chennai",
       status: "AVAILABLE",
+      pin: "1234",
+      memberCount: 5,
     },
     {
       code: "POLICE-02",
@@ -78,6 +93,8 @@ async function main() {
       longitude: 80.2101,
       address: "2nd Avenue, Anna Nagar, Chennai",
       status: "AVAILABLE",
+      pin: "1234",
+      memberCount: 5,
     },
     {
       code: "DISASTER-01",
@@ -87,6 +104,8 @@ async function main() {
       longitude: 80.2158,
       address: "Sardar Patel Road, Guindy, Chennai",
       status: "AVAILABLE",
+      pin: "1234",
+      memberCount: 7,
     },
     {
       code: "DISASTER-02",
@@ -96,17 +115,22 @@ async function main() {
       longitude: 80.2185,
       address: "Velachery Bypass Rd, Chennai",
       status: "AVAILABLE",
+      pin: "1234",
+      memberCount: 7,
     },
   ];
 
   for (const team of teams) {
     await prisma.team.upsert({
       where: { code: team.code },
-      update: {},
+      update: {
+        pin: team.pin,
+        memberCount: team.memberCount,
+      },
       create: team,
     });
   }
-  console.log(`✓ 10 Response teams verified/seeded.`);
+  console.log(`✓ 10 Response teams verified/seeded with memberCount (4-8) and demo PIN.`);
 
   const now = Date.now();
   const minutesAgo = (mins: number) => new Date(now - mins * 60 * 1000);
@@ -294,4 +318,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-
