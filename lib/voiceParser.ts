@@ -6,6 +6,7 @@ export interface ParsedVoiceReport {
   tags: string[];
   contactPhone?: string;
   addressText?: string;
+  useCurrentLocation?: boolean;
   confidence: {
     category: boolean;
     peopleAffected: boolean;
@@ -355,10 +356,20 @@ const DIGIT_WORD_MAP: Record<string, string> = {
 };
 
 /**
+ * Phrases indicating explicit intent to use device GPS or current location
+ */
+const CURRENT_LOCATION_PATTERNS = [
+  /\b(?:my\s+current\s+location|current\s+location|my\s+location)\b/i,
+  /\b(?:where\s+i\s+am|where\s+am\s+i)\b/i,
+  /\b(?:right\s+here|\bhere\b|this\s+place)\b/i,
+  /\b(?:use\s+my\s+location|use\s+my\s+current\s+location|use\s+current\s+location|use\s+gps)\b/i,
+];
+
+/**
  * Pure function to extract structured emergency report fields from a spoken transcript.
  *
  * @param transcript - Voice transcript string
- * @returns {ParsedVoiceReport} Extracted category, casualty count, tags, phone, and address
+ * @returns {ParsedVoiceReport} Extracted category, casualty count, tags, phone, address, and current location intent
  */
 export function parseVoiceReport(transcript: string): ParsedVoiceReport {
   const text = (transcript || "").trim();
@@ -439,7 +450,6 @@ export function parseVoiceReport(transcript: string): ParsedVoiceReport {
     "unconscious",
   ];
 
-  // Specific phrases first
   if (/\b(?:many people|many)\b/i.test(lower)) {
     detectedPeople = 10;
   } else if (/\b(?:several people|several)\b/i.test(lower)) {
@@ -550,50 +560,76 @@ export function parseVoiceReport(transcript: string): ParsedVoiceReport {
   }
 
   // ==========================================
-  // 5. ADDRESS TEXT EXTRACTION
+  // 5. CURRENT LOCATION INTENT & ADDRESS EXTRACTION
   // ==========================================
-  let detectedAddress: string | undefined = undefined;
+  let useCurrentLocation = false;
 
-  // Specific prepositions in precedence order:
-  // Landmark prepositions ('near', 'opposite', 'behind', 'next to') take top precedence,
-  // followed by 'at', 'on', 'in'.
-  const specificPrepMatch = text.match(
-    /\b(?:near|opposite|behind|next to|close to)\s+([^,.;]+)/i
-  );
-
-  let rawAddress = "";
-  if (specificPrepMatch) {
-    rawAddress = specificPrepMatch[1];
-  } else {
-    const generalPrepMatch = text.match(/\b(?:at|on|in)\s+([^,.;]+)/i);
-    if (generalPrepMatch) {
-      rawAddress = generalPrepMatch[1];
+  for (const pattern of CURRENT_LOCATION_PATTERNS) {
+    if (pattern.test(lower)) {
+      useCurrentLocation = true;
+      break;
     }
   }
 
-  if (rawAddress) {
-    // Stop at words like "and", "six", "two", "my number", "where", "with", "phone"
-    let candidate = rawAddress
-      .replace(
-        /\s+(?:and|my number|with|where|call me|phone|contact|\d+|two|three|four|five|six|is|are|the road).*$/i,
-        ""
-      )
-      .replace(/^(?:the|a|an)\s+/i, "")
-      .trim();
+  let detectedAddress: string | undefined = undefined;
 
-    const lowerCand = candidate.toLowerCase();
-    const isGeneric =
-      lowerCand === "building" ||
-      lowerCand === "a building" ||
-      lowerCand === "highway" ||
-      lowerCand === "the highway" ||
-      lowerCand === "road" ||
-      lowerCand === "the road" ||
-      lowerCand === "house" ||
-      lowerCand === "houses";
+  // Only extract addressText if NOT an explicit current-location intent
+  if (!useCurrentLocation) {
+    // Look for place prepositions: near, at, in, opposite, behind, beside, on, outside, inside, next to, close to
+    // Landmark prepositions take top precedence
+    const prepRegex =
+      /\b(?:near|opposite|behind|beside|outside|inside|next to|close to|at|on|in)\s+([^,.;]+)/gi;
 
-    if (candidate.length >= 3 && !isGeneric) {
-      detectedAddress = candidate;
+    let match: RegExpExecArray | null;
+    const candidates: string[] = [];
+
+    while ((match = prepRegex.exec(text)) !== null) {
+      let rawCandidate = match[1].trim();
+
+      // Stop candidate at words: comma, "and", "please", numbers, or verbs
+      rawCandidate = rawCandidate
+        .replace(
+          /\s+(?:and|please|my number|with|where|call me|phone|contact|\d+|two|three|four|five|six|is|are|fell|collapsed|trapped|stranded|injured|bleeding|fainted|submerged|entering|burning|need|needs|help|use).*$/i,
+          ""
+        )
+        .replace(/^(?:the|a|an)\s+/i, "")
+        .trim();
+
+      // Reject junk:
+      // - Shorter than 3 chars
+      // - Contains words like please, use, current, location, my, me, where, here, this
+      // - Matches emergency keywords only or generic non-places
+      const lowerCand = rawCandidate.toLowerCase();
+      const containsJunkWords =
+        /\b(?:please|use|current|location|my|me|where|here|this|right)\b/i.test(
+          lowerCand
+        );
+
+      const isGenericOrEmergency =
+        lowerCand === "fire" ||
+        lowerCand === "accident" ||
+        lowerCand === "flood" ||
+        lowerCand === "collapse" ||
+        lowerCand === "building" ||
+        lowerCand === "a building" ||
+        lowerCand === "highway" ||
+        lowerCand === "the highway" ||
+        lowerCand === "road" ||
+        lowerCand === "the road" ||
+        lowerCand === "house" ||
+        lowerCand === "houses";
+
+      if (
+        rawCandidate.length >= 3 &&
+        !containsJunkWords &&
+        !isGenericOrEmergency
+      ) {
+        candidates.push(rawCandidate);
+      }
+    }
+
+    if (candidates.length > 0) {
+      detectedAddress = candidates[0];
       confidence.addressText = true;
     }
   }
@@ -604,6 +640,7 @@ export function parseVoiceReport(transcript: string): ParsedVoiceReport {
     tags: detectedTags,
     contactPhone: detectedPhone,
     addressText: detectedAddress,
+    useCurrentLocation,
     confidence,
   };
 }

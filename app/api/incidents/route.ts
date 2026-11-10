@@ -80,7 +80,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate and resolve Location string
-    let resolvedLocation = "";
     const hasCoordinates =
       typeof latitude === "number" &&
       typeof longitude === "number" &&
@@ -88,12 +87,27 @@ export async function POST(request: NextRequest) {
       !isNaN(longitude);
 
     const cleanAddress = address && typeof address === "string" ? address.trim() : "";
+    const cleanDesc = description && typeof description === "string" ? description.trim() : "";
 
-    if (cleanAddress) {
+    // Check if address is junk or transcript text
+    const isAddressJunk =
+      !cleanAddress ||
+      cleanAddress.length < 3 ||
+      /\b(?:please|use\s+my|current\s+location|my\s+location)\b/i.test(cleanAddress) ||
+      (cleanDesc.length > 0 && cleanAddress.toLowerCase() === cleanDesc.toLowerCase());
+
+    let resolvedLocation = "";
+    if (cleanAddress && !isAddressJunk) {
       resolvedLocation = cleanAddress;
     } else if (hasCoordinates) {
       resolvedLocation = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-    } else if (location && typeof location === "string" && location.trim()) {
+    } else if (
+      location &&
+      typeof location === "string" &&
+      location.trim() &&
+      location.trim().toLowerCase() !== cleanDesc.toLowerCase() &&
+      !/\b(?:please|use\s+my|current\s+location|my\s+location)\b/i.test(location.trim())
+    ) {
       resolvedLocation = location.trim();
     } else {
       errors.location = "Location is required (device coordinates, map pin, or address).";
@@ -121,17 +135,13 @@ export async function POST(request: NextRequest) {
     const categoryLabel = formatCategoryName(category as CategoryType);
     let resolvedTitle = title && typeof title === "string" && title.trim() ? title.trim() : "";
     if (!resolvedTitle) {
-      resolvedTitle = cleanAddress
+      resolvedTitle = cleanAddress && !isAddressJunk
         ? `${categoryLabel} reported - ${cleanAddress}`
         : `${categoryLabel} reported`;
     }
 
     // Auto-generate Description if not provided
-    let resolvedDesc =
-      description && typeof description === "string" && description.trim()
-        ? description.trim()
-        : "";
-
+    let resolvedDesc = cleanDesc;
     if (!resolvedDesc) {
       const tagSnippet = cleanTags.length > 0 ? ` ${cleanTags.join(", ")}.` : "";
       resolvedDesc = `${categoryLabel} reported. ${parsedPeople} people affected.${tagSnippet}`;
@@ -154,7 +164,7 @@ export async function POST(request: NextRequest) {
         location: resolvedLocation,
         latitude: hasCoordinates ? latitude : null,
         longitude: hasCoordinates ? longitude : null,
-        address: cleanAddress || null,
+        address: cleanAddress && !isAddressJunk ? cleanAddress : (hasCoordinates ? `${latitude.toFixed(4)}, ${longitude.toFixed(4)}` : null),
         tags: JSON.stringify(cleanTags),
         photo: photo && typeof photo === "string" ? photo : null,
         peopleAffected: parsedPeople,

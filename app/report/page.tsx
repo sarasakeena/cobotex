@@ -23,8 +23,6 @@ import {
   AlertCircle,
   Phone,
   Sparkles,
-  Clock,
-  RotateCcw,
 } from "lucide-react";
 import { CategoryType, SeverityType, formatCategoryName } from "@/lib/severity";
 import { SeverityBadge } from "@/components/SeverityBadge";
@@ -154,7 +152,7 @@ export default function ReportPage() {
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const transcriptAccumulatorRef = useRef<string>("");
 
-  // Track fields modified manually by the user
+  // Track fields modified manually by user
   const [userModified, setUserModified] = useState({
     category: false,
     location: false,
@@ -219,7 +217,42 @@ export default function ReportPage() {
     );
   };
 
-  // Geocode address using Nominatim OpenStreetMap API
+  // Reverse geocode coordinates using Nominatim API (5s timeout)
+  const reverseGeocodeCoords = async (
+    lat: number,
+    lng: number
+  ): Promise<string | null> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18`,
+        {
+          signal: controller.signal,
+          headers: {
+            "Accept-Language": "en",
+            "User-Agent": "CrisisPulse-EmergencyResponse/1.0",
+          },
+        }
+      );
+      clearTimeout(timeoutId);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data && data.display_name) {
+        const parts = data.display_name
+          .split(",")
+          .map((s: string) => s.trim())
+          .filter(Boolean);
+        return parts.slice(0, 3).join(", ");
+      }
+      return null;
+    } catch {
+      clearTimeout(timeoutId);
+      return null;
+    }
+  };
+
+  // Forward geocode address using Nominatim OpenStreetMap API
   const geocodeAddress = async (
     query: string
   ): Promise<{ lat: number; lng: number } | null> => {
@@ -232,7 +265,10 @@ export default function ReportPage() {
         )}&countrycodes=in`,
         {
           signal: controller.signal,
-          headers: { "Accept-Language": "en" },
+          headers: {
+            "Accept-Language": "en",
+            "User-Agent": "CrisisPulse-EmergencyResponse/1.0",
+          },
         }
       );
       clearTimeout(timeoutId);
@@ -252,7 +288,7 @@ export default function ReportPage() {
     }
   };
 
-  // Geolocation acquisition
+  // Geolocation acquisition + reverse geocode
   const requestCurrentLocation = useCallback(
     (onSuccess?: (pos: { lat: number; lng: number }) => void) => {
       if (!navigator.geolocation) {
@@ -265,13 +301,22 @@ export default function ReportPage() {
       setLocError(null);
 
       navigator.geolocation.getCurrentPosition(
-        (position) => {
+        async (position) => {
           const pos = {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
           };
           setCoords(pos);
           setLocationSource("gps");
+
+          // Reverse geocode with Nominatim (first 3 comma-separated parts)
+          const revAddress = await reverseGeocodeCoords(pos.lat, pos.lng);
+          if (revAddress) {
+            setAddress(revAddress);
+          } else {
+            setAddress(`${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)}`);
+          }
+
           setLocLoading(false);
           setLocError(null);
           if (onSuccess) onSuccess(pos);
@@ -319,7 +364,6 @@ export default function ReportPage() {
           countdownIntervalRef.current = null;
         }
         setCountdown(0);
-        // Automatically submit the form
         submitReportDirect();
       } else {
         setCountdown(currentCount);
@@ -352,7 +396,6 @@ export default function ReportPage() {
           setIsExactOpen(false);
           setSelectedPeoplePreset(matchingPreset.value);
         } else {
-          // If 6, set exact number to 6
           setIsExactOpen(true);
           setExactPeople(String(count));
           setSelectedPeoplePreset(null);
@@ -371,9 +414,9 @@ export default function ReportPage() {
         newVoiceFields.add("phone");
       }
 
-      // 5. Address text
+      // 5. Address text (NEVER the whole transcript)
       let resolvedAddress = address;
-      if (parsed.addressText && !userModified.location) {
+      if (parsed.addressText && !userModified.location && !parsed.useCurrentLocation) {
         setAddress(parsed.addressText);
         resolvedAddress = parsed.addressText;
         newVoiceFields.add("address");
@@ -387,30 +430,35 @@ export default function ReportPage() {
 
       setVoiceFilledFields(newVoiceFields);
 
-      // Handle Location Geocoding or GPS fallback
+      // 7. Location flow
+      // If useCurrentLocation is true (or no valid addressText), skip forward geocoding and call GPS immediately
       let finalCoords = coords;
-      if (!userModified.location && !coords) {
-        if (resolvedAddress) {
-          setLocLoading(true);
-          const geoRes = await geocodeAddress(resolvedAddress);
-          setLocLoading(false);
-          if (geoRes) {
-            setCoords(geoRes);
-            finalCoords = geoRes;
-            setLocationSource("geocode");
-            newVoiceFields.add("location");
-          } else {
-            // Geocoding failed -> try GPS
-            requestCurrentLocation((gpsCoords) => {
-              finalCoords = gpsCoords;
-              // Check ready state with GPS coords
-              if (resolvedCategory && gpsCoords) {
-                triggerAutoSubmitCountdown();
-              }
-            });
+
+      if (parsed.useCurrentLocation || !parsed.addressText) {
+        if (!userModified.location) {
+          // Clear any speech transcript leakage from address text field
+          setAddress("");
+        }
+        requestCurrentLocation((gpsCoords) => {
+          finalCoords = gpsCoords;
+          if (resolvedCategory && gpsCoords) {
+            triggerAutoSubmitCountdown();
+          }
+        });
+      } else if (resolvedAddress && !userModified.location && !coords) {
+        setLocLoading(true);
+        const geoRes = await geocodeAddress(resolvedAddress);
+        setLocLoading(false);
+        if (geoRes) {
+          setCoords(geoRes);
+          finalCoords = geoRes;
+          setLocationSource("geocode");
+          newVoiceFields.add("location");
+          if (resolvedCategory) {
+            triggerAutoSubmitCountdown();
           }
         } else {
-          // No address in speech -> immediately trigger geolocation
+          // Geocode failed -> call GPS immediately
           requestCurrentLocation((gpsCoords) => {
             finalCoords = gpsCoords;
             if (resolvedCategory && gpsCoords) {
@@ -418,15 +466,14 @@ export default function ReportPage() {
             }
           });
         }
-      }
-
-      // READY CHECK: If category + location (coordinates or address) are present
-      const isComplete = Boolean(resolvedCategory && (finalCoords || resolvedAddress));
-      if (isComplete) {
-        triggerAutoSubmitCountdown();
       } else {
-        setMissingFieldNotice("Almost done: please confirm your location pin on the map.");
-        setShowMap(true);
+        const isComplete = Boolean(resolvedCategory && (finalCoords || resolvedAddress));
+        if (isComplete) {
+          triggerAutoSubmitCountdown();
+        } else {
+          setMissingFieldNotice("Almost done: please confirm your location pin on the map.");
+          setShowMap(true);
+        }
       }
     },
     [
@@ -581,8 +628,19 @@ export default function ReportPage() {
 
     const peopleCount = getPeopleAffectedCount();
     const categoryLabel = formatCategoryName(category);
-    const autoTitle = address.trim()
-      ? `${categoryLabel} reported - ${address.trim()}`
+
+    // Sanitize address: never send description or junk phrases as address
+    const cleanAddr = address.trim();
+    const isJunkAddr =
+      !cleanAddr ||
+      cleanAddr.length < 3 ||
+      /\b(?:please|use\s+my|current\s+location|my\s+location)\b/i.test(cleanAddr) ||
+      cleanAddr.toLowerCase() === description.trim().toLowerCase();
+
+    const validAddress = !isJunkAddr ? cleanAddr : undefined;
+
+    const autoTitle = validAddress
+      ? `${categoryLabel} reported - ${validAddress}`
       : `${categoryLabel} reported`;
 
     let autoDesc = description.trim();
@@ -602,7 +660,7 @@ export default function ReportPage() {
           category,
           latitude: coords?.lat,
           longitude: coords?.lng,
-          address: address.trim() || undefined,
+          address: validAddress,
           peopleAffected: peopleCount,
           tags: selectedTags,
           title: autoTitle,
@@ -660,7 +718,7 @@ export default function ReportPage() {
     });
   };
 
-  const hasLocation = Boolean(coords || address.trim());
+  const hasLocation = Boolean(coords || (address.trim() && !/\b(?:please|use\s+my|current\s+location|my\s+location)\b/i.test(address.trim())));
 
   // CONFIRMATION SCREEN
   if (submittedIncident) {
@@ -786,7 +844,7 @@ export default function ReportPage() {
           <div className="flex-1">
             <p className="font-bold">{missingFieldNotice}</p>
             <p className="text-amber-700 mt-0.5">
-              Please drop a pin on the map or enter an address below to enable instant submit.
+              Please drop a pin on the map or use GPS to confirm incident coordinates.
             </p>
           </div>
           <button
@@ -891,7 +949,7 @@ export default function ReportPage() {
             {locLoading ? (
               <>
                 <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Acquiring Coordinates...</span>
+                <span>Acquiring Coordinates &amp; Address...</span>
               </>
             ) : (
               <>
@@ -948,12 +1006,20 @@ export default function ReportPage() {
             <div className="pt-2">
               <MapPicker
                 position={coords}
-                onPositionChange={(pos) => {
+                onPositionChange={async (pos) => {
                   cancelCountdown();
                   setCoords(pos);
                   setLocationSource("manual");
                   setLocError(null);
                   setMissingFieldNotice(null);
+
+                  // Reverse geocode pinned coordinates
+                  const revAddress = await reverseGeocodeCoords(pos.lat, pos.lng);
+                  if (revAddress) {
+                    setAddress(revAddress);
+                  } else {
+                    setAddress(`${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)}`);
+                  }
                 }}
               />
             </div>
@@ -963,7 +1029,7 @@ export default function ReportPage() {
           <div className="pt-1">
             <input
               type="text"
-              placeholder="Address, landmark or intersection (e.g. near T Nagar bus stand)"
+              placeholder="Address, landmark or intersection (e.g. near Tambaram railway station)"
               value={address}
               onChange={(e) => {
                 cancelCountdown();
@@ -1157,7 +1223,7 @@ export default function ReportPage() {
                 Speak everything in one go:
               </span>{" "}
               <span>
-                &ldquo;Fire in a building near T Nagar bus stand, six people trapped and one is unconscious, my number is 98765 43210&rdquo;
+                &ldquo;Fire in a building near Tambaram railway station, six people trapped and one is unconscious, my number is 98765 43210&rdquo;
               </span>
             </div>
           </div>
