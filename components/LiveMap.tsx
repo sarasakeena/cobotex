@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
   MapContainer,
@@ -27,6 +27,8 @@ export interface MapIncident {
   location: string;
   distanceKm?: number | null;
   etaMinutes?: number | null;
+  enRouteAt?: string | null;
+  arrivedAt?: string | null;
   priority?: {
     score: number;
     level: string;
@@ -40,7 +42,9 @@ export interface MapIncident {
     latitude: number;
     longitude: number;
     status: string;
+    speedKmh?: number | null;
   } | null;
+  backupTeams?: any[];
 }
 
 export interface MapTeam {
@@ -52,6 +56,8 @@ export interface MapTeam {
   longitude: number;
   address?: string | null;
   status: string;
+  speedKmh?: number | null;
+  memberCount?: number;
   currentIncidentId?: string | null;
 }
 
@@ -109,6 +115,20 @@ export default function LiveMap({
         !isNaN(t.longitude)
     );
   }, [teams]);
+
+  // Map of teamId -> assigned incident info
+  const teamIncidentMap = useMemo(() => {
+    const map = new Map<string, MapIncident>();
+    incidents.forEach((inc) => {
+      if (inc.status !== "RESOLVED") {
+        if (inc.assignedTeamId) map.set(inc.assignedTeamId, inc);
+        inc.backupTeams?.forEach((bt: any) => {
+          if (bt.teamId) map.set(bt.teamId, inc);
+        });
+      }
+    });
+    return map;
+  }, [incidents]);
 
   // All markers for auto-fitting
   const allCoordinates: [number, number][] = useMemo(() => {
@@ -215,11 +235,13 @@ export default function LiveMap({
             );
           })}
 
-        {/* 2. Response Team Markers */}
+        {/* 2. Response Team Markers with Moving Updates & En Route Labels */}
         {showTeams &&
           validTeams.map((team) => {
             const icon = createTeamIcon(team.category, team.status);
             const isAvailable = team.status === "AVAILABLE";
+            const activeInc = teamIncidentMap.get(team.id);
+            const isEnRoute = !!activeInc?.enRouteAt && !activeInc?.arrivedAt;
 
             return (
               <Marker
@@ -227,8 +249,20 @@ export default function LiveMap({
                 position={[team.latitude, team.longitude]}
                 icon={icon}
               >
+                {/* En Route Label on Map: "En route, 2.1 km left" */}
+                {isEnRoute && activeInc?.distanceKm && (
+                  <Tooltip
+                    permanent
+                    direction="top"
+                    offset={[0, -16]}
+                    className="bg-navy text-cream font-mono text-[10px] font-black px-2 py-0.5 rounded-md border border-navy-light shadow-md"
+                  >
+                    {`En route, ${activeInc.distanceKm} km left`}
+                  </Tooltip>
+                )}
+
                 <Popup className="custom-leaflet-popup">
-                  <div className="p-1 min-w-[190px] text-navy font-sans">
+                  <div className="p-1 min-w-[200px] text-navy font-sans">
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-mono text-xs font-black bg-cream px-1.5 py-0.5 rounded border border-slate/40">
                         {team.code}
@@ -248,12 +282,32 @@ export default function LiveMap({
                       {team.name}
                     </h4>
                     <p className="text-[11px] font-semibold text-navy/70 mt-0.5">
-                      Category: {team.category}
+                      Category: {team.category} &bull; {team.memberCount || 4} personnel
                     </p>
-                    {team.address && (
-                      <p className="text-[10px] text-slate-dark mt-1">
-                        {team.address}
+
+                    {typeof team.speedKmh === "number" && (
+                      <p className="text-[11px] font-bold text-emerald-700 mt-1">
+                        Speed: {team.speedKmh} km/h
                       </p>
+                    )}
+
+                    {activeInc && (
+                      <div className="mt-2 pt-2 border-t border-slate/30 text-[11px] space-y-0.5 font-bold">
+                        <span className="text-slate-dark text-[10px] uppercase block">
+                          Dispatched Incident:
+                        </span>
+                        <Link
+                          href={`/admin/incidents/${activeInc.id}`}
+                          className="text-burgundy hover:underline line-clamp-1"
+                        >
+                          {activeInc.title}
+                        </Link>
+                        {activeInc.distanceKm && (
+                          <span className="text-navy/80 block">
+                            Remaining: {activeInc.distanceKm} km (~{activeInc.etaMinutes ?? "N/A"}m)
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                 </Popup>
@@ -282,7 +336,7 @@ export default function LiveMap({
                   [incLat, incLng],
                 ]}
                 pathOptions={{
-                  color: "#490b1a", // burgundy
+                  color: "#490b1a",
                   weight: 3.5,
                   dashArray: "6, 8",
                   opacity: 0.85,
@@ -307,7 +361,6 @@ export default function LiveMap({
           <span>Map Legend</span>
         </div>
 
-        {/* Severities */}
         <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] font-bold">
           <div className="flex items-center gap-1.5">
             <span className="h-3 w-3 rounded-full bg-red-600 border border-white shrink-0" />
@@ -327,7 +380,6 @@ export default function LiveMap({
           </div>
         </div>
 
-        {/* Teams & Route */}
         <div className="pt-1.5 border-t border-slate/30 space-y-1 text-[11px] font-bold">
           <div className="flex items-center gap-1.5">
             <span className="h-3 w-3 rounded-full bg-blue-600 border border-white flex items-center justify-center text-[8px] text-white font-mono">
@@ -350,4 +402,3 @@ export default function LiveMap({
     </div>
   );
 }
-

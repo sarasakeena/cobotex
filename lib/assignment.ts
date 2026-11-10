@@ -18,6 +18,7 @@ export interface TeamLike {
   address?: string | null;
   status: string; // AVAILABLE | BUSY
   currentIncidentId?: string | null;
+  memberCount?: number;
 }
 
 export interface IncidentLocationLike {

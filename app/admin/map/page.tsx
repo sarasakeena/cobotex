@@ -64,6 +64,9 @@ export default function LiveMapPage() {
 
   useEffect(() => {
     loadData();
+    // Poll map markers every 5 seconds for live moving team tracking
+    const interval = setInterval(loadData, 5000);
+    return () => clearInterval(interval);
   }, [loadData]);
 
   // Count incidents missing coordinates

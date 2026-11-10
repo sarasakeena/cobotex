@@ -77,3 +77,4 @@ export async function getAuthenticatedTeam(request: NextRequest) {
 }
 
 export { COOKIE_NAME };
+
