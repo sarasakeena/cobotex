@@ -35,3 +35,4 @@ export function CategoryIcon({
       return <AlertTriangle className={`text-slate-500 ${className}`} size={size} />;
   }
 }
+

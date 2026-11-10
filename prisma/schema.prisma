@@ -13,6 +13,11 @@ model Incident {
   description    String
   category       String   // FIRE | ROAD_ACCIDENT | MEDICAL | FLOOD | BUILDING_COLLAPSE | OTHER
   location       String
+  latitude       Float?
+  longitude      Float?
+  address        String?
+  tags           String   @default("[]") // Stored as JSON array string
+  photo          String?  // Optional base64 or photo URL
   peopleAffected Int      @default(0)
   contactInfo    String?
   severity       String   // LOW | MEDIUM | HIGH | CRITICAL

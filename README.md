@@ -79,3 +79,4 @@ The calculation breakdown reasons are returned as an array and displayed on the 
 - [`IncidentTable`](components/IncidentTable.tsx): Sortable, filterable incident feed with inline status updating and deletion modals.
 - [`CategoryChart`](components/CategoryChart.tsx): Recharts visualization of incidents by emergency category.
 - [`ConfirmModal`](components/ConfirmModal.tsx): Modal dialog for safe record deletion.
+

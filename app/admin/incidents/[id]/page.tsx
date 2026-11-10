@@ -17,6 +17,9 @@ import {
   Activity,
   Layers,
   X,
+  ExternalLink,
+  Tag,
+  ImageIcon,
 } from "lucide-react";
 import { formatCategoryName } from "@/lib/severity";
 import { SeverityBadge } from "@/components/SeverityBadge";
@@ -30,6 +33,11 @@ interface IncidentDetail {
   description: string;
   category: string;
   location: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  address?: string | null;
+  tags?: string[];
+  photo?: string | null;
   peopleAffected: number;
   contactInfo?: string | null;
   severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
@@ -179,6 +187,9 @@ export default function IncidentDetailPage() {
   }
 
   const isCritical = incident.severity === "CRITICAL";
+  const hasCoordinates =
+    typeof incident.latitude === "number" &&
+    typeof incident.longitude === "number";
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -277,14 +288,51 @@ export default function IncidentDetailPage() {
             </div>
           </div>
 
-          {/* Key Parameters */}
+          {/* Incident Photo (if present) */}
+          {incident.photo && (
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
+                <ImageIcon className="h-4 w-4 text-slate-500" />
+                <span>Field Photo Evidence</span>
+              </h2>
+              <div className="overflow-hidden rounded-lg border border-slate-200 max-w-md">
+                <img
+                  src={incident.photo}
+                  alt="Incident Scene"
+                  className="w-full h-auto object-cover max-h-72"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Quick Tags Section */}
+          {incident.tags && incident.tags.length > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
+                <Tag className="h-4 w-4 text-red-500" />
+                <span>Incident Tags</span>
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {incident.tags.map((tag, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200"
+                  >
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Key Parameters: Location & Coordinates */}
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-base font-bold text-slate-900 mb-4">
-              Location &amp; Casualty Impact
+              Location &amp; Coordinates
             </h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Location */}
+              {/* Location Text / Address */}
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
                 <div className="flex items-center gap-2 text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">
                   <MapPin className="h-4 w-4 text-red-500" />
@@ -293,6 +341,39 @@ export default function IncidentDetailPage() {
                 <p className="text-base font-semibold text-slate-900 mt-1">
                   {incident.location}
                 </p>
+                {incident.address && incident.address !== incident.location && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    Address: {incident.address}
+                  </p>
+                )}
+              </div>
+
+              {/* Coordinates with Google Maps link */}
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+                <div className="flex items-center gap-2 text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">
+                  <MapPin className="h-4 w-4 text-blue-500" />
+                  <span>GPS Coordinates</span>
+                </div>
+                {hasCoordinates ? (
+                  <div className="mt-1">
+                    <p className="text-sm font-mono font-semibold text-slate-900">
+                      {incident.latitude?.toFixed(5)}, {incident.longitude?.toFixed(5)}
+                    </p>
+                    <a
+                      href={`https://www.google.com/maps?q=${incident.latitude},${incident.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-red-600 hover:text-red-700 transition"
+                    >
+                      <span>Open in Google Maps</span>
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-400 italic mt-1">
+                    Coordinates not logged
+                  </p>
+                )}
               </div>
 
               {/* People Affected */}
@@ -310,13 +391,13 @@ export default function IncidentDetailPage() {
               </div>
 
               {/* Contact Information */}
-              <div className="rounded-lg border border-slate-100 bg-slate-50 p-4 sm:col-span-2">
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
                 <div className="flex items-center gap-2 text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">
                   <Phone className="h-4 w-4 text-slate-600" />
-                  <span>Reporter Contact Information</span>
+                  <span>Contact Information</span>
                 </div>
                 <p className="text-sm font-medium text-slate-900 mt-1">
-                  {incident.contactInfo ? incident.contactInfo : "No contact information provided"}
+                  {incident.contactInfo ? incident.contactInfo : "Not provided"}
                 </p>
               </div>
             </div>
@@ -339,7 +420,7 @@ export default function IncidentDetailPage() {
             </div>
 
             <p className="text-xs text-slate-500 mb-4">
-              Pure algorithmic classification breakdown computed from category baseline, casualty scope, and critical escalation keywords:
+              Pure algorithmic classification breakdown computed from category baseline, casualty scope, keywords, and tags:
             </p>
 
             <ul className="space-y-2.5">

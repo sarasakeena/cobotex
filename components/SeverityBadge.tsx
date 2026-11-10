@@ -57,3 +57,4 @@ export function SeverityBadge({ severity, size = "md" }: SeverityBadgeProps) {
       );
   }
 }
+

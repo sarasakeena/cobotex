@@ -22,16 +22,27 @@ export async function GET(
       );
     }
 
-    // Compute severity reasons dynamically for full transparency
-    const severityResult = calculateSeverity(
-      incident.category,
-      incident.peopleAffected,
-      incident.title,
-      incident.description
-    );
+    let parsedTags: string[] = [];
+    try {
+      if (incident.tags) {
+        parsedTags = JSON.parse(incident.tags);
+      }
+    } catch {
+      parsedTags = [];
+    }
+
+    // Compute severity reasons dynamically for full transparency including tags
+    const severityResult = calculateSeverity({
+      category: incident.category,
+      peopleAffected: incident.peopleAffected,
+      tags: parsedTags,
+      title: incident.title,
+      description: incident.description,
+    });
 
     return NextResponse.json({
       ...incident,
+      tags: parsedTags,
       severityScore: severityResult.score,
       severityReasons: severityResult.reasons,
     });

@@ -102,3 +102,4 @@ export function CategoryChart({ data }: CategoryChartProps) {
     </div>
   );
 }
+

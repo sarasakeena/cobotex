@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { calculateSeverity, CategoryType } from "@/lib/severity";
+import { calculateSeverity, formatCategoryName, CategoryType } from "@/lib/severity";
 
 const VALID_CATEGORIES: CategoryType[] = [
   "FIRE",
@@ -58,35 +58,57 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { title, description, category, location, peopleAffected, contactInfo } = body;
+    const {
+      title,
+      description,
+      category,
+      location,
+      latitude,
+      longitude,
+      address,
+      tags = [],
+      peopleAffected = 0,
+      contactInfo,
+      photo,
+    } = body;
 
     const errors: Record<string, string> = {};
-
-    // Validate Title
-    if (!title || typeof title !== "string" || !title.trim()) {
-      errors.title = "Incident title is required.";
-    }
-
-    // Validate Description
-    if (!description || typeof description !== "string" || !description.trim()) {
-      errors.description = "Detailed incident description is required.";
-    }
 
     // Validate Category
     if (!category || !VALID_CATEGORIES.includes(category as CategoryType)) {
       errors.category = "Please select a valid emergency category.";
     }
 
-    // Validate Location
-    if (!location || typeof location !== "string" || !location.trim()) {
-      errors.location = "Incident location is required.";
+    // Validate and resolve Location string
+    let resolvedLocation = "";
+    const hasCoordinates =
+      typeof latitude === "number" &&
+      typeof longitude === "number" &&
+      !isNaN(latitude) &&
+      !isNaN(longitude);
+
+    const cleanAddress = address && typeof address === "string" ? address.trim() : "";
+
+    if (cleanAddress) {
+      resolvedLocation = cleanAddress;
+    } else if (hasCoordinates) {
+      resolvedLocation = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+    } else if (location && typeof location === "string" && location.trim()) {
+      resolvedLocation = location.trim();
+    } else {
+      errors.location = "Location is required (device coordinates, map pin, or address).";
     }
 
     // Validate People Affected
-    const parsedPeople = parseInt(peopleAffected, 10);
+    const parsedPeople = parseInt(String(peopleAffected), 10);
     if (isNaN(parsedPeople) || parsedPeople < 0) {
       errors.peopleAffected = "Number of people affected must be a positive number (minimum 0).";
     }
+
+    // Normalize tags
+    const cleanTags: string[] = Array.isArray(tags)
+      ? tags.map((t) => String(t).trim()).filter(Boolean)
+      : [];
 
     if (Object.keys(errors).length > 0) {
       return NextResponse.json(
@@ -95,20 +117,46 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Auto-generate Title if not provided
+    const categoryLabel = formatCategoryName(category as CategoryType);
+    let resolvedTitle = title && typeof title === "string" && title.trim() ? title.trim() : "";
+    if (!resolvedTitle) {
+      resolvedTitle = cleanAddress
+        ? `${categoryLabel} reported - ${cleanAddress}`
+        : `${categoryLabel} reported`;
+    }
+
+    // Auto-generate Description if not provided
+    let resolvedDesc =
+      description && typeof description === "string" && description.trim()
+        ? description.trim()
+        : "";
+
+    if (!resolvedDesc) {
+      const tagSnippet = cleanTags.length > 0 ? ` ${cleanTags.join(", ")}.` : "";
+      resolvedDesc = `${categoryLabel} reported. ${parsedPeople} people affected.${tagSnippet}`;
+    }
+
     // Compute Severity with pure function
-    const severityResult = calculateSeverity(
-      category as CategoryType,
-      parsedPeople,
-      title.trim(),
-      description.trim()
-    );
+    const severityResult = calculateSeverity({
+      category: category as CategoryType,
+      peopleAffected: parsedPeople,
+      tags: cleanTags,
+      title: resolvedTitle,
+      description: resolvedDesc,
+    });
 
     const incident = await prisma.incident.create({
       data: {
-        title: title.trim(),
-        description: description.trim(),
+        title: resolvedTitle,
+        description: resolvedDesc,
         category: category as any,
-        location: location.trim(),
+        location: resolvedLocation,
+        latitude: hasCoordinates ? latitude : null,
+        longitude: hasCoordinates ? longitude : null,
+        address: cleanAddress || null,
+        tags: JSON.stringify(cleanTags),
+        photo: photo && typeof photo === "string" ? photo : null,
         peopleAffected: parsedPeople,
         contactInfo: contactInfo ? String(contactInfo).trim() : null,
         severity: severityResult.severity as any,
@@ -119,6 +167,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ...incident,
+        tags: cleanTags,
         severityScore: severityResult.score,
         severityReasons: severityResult.reasons,
       },
