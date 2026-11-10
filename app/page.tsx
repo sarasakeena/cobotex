@@ -7,6 +7,7 @@ import {
   Activity,
   ArrowRight,
   Radio,
+  Search,
 } from "lucide-react";
 
 export default function HomePage() {
@@ -41,8 +42,16 @@ export default function HomePage() {
             </Link>
 
             <Link
+              href="/track"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 rounded-2xl border-2 border-slate/50 bg-cardBg px-6 py-4 text-base font-bold text-navy hover:bg-cream transition shadow-sm hover:-translate-y-0.5"
+            >
+              <Search className="h-5 w-5 text-burgundy" />
+              <span>Track a Report</span>
+            </Link>
+
+            <Link
               href="/admin"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 rounded-2xl border-2 border-navy bg-transparent px-7 py-4 text-base font-bold text-navy hover:bg-navy hover:text-cream active:bg-navy-hover transition shadow-sm hover:-translate-y-0.5"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 rounded-2xl border-2 border-navy bg-transparent px-6 py-4 text-base font-bold text-navy hover:bg-navy hover:text-cream active:bg-navy-hover transition shadow-sm hover:-translate-y-0.5"
             >
               <LayoutDashboard className="h-5 w-5" />
               <span>Admin Dashboard</span>

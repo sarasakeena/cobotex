@@ -25,6 +25,9 @@ import {
   Sparkles,
   Edit3,
   RotateCcw,
+  Copy,
+  Share2,
+  ArrowRight,
 } from "lucide-react";
 import { CategoryType, SeverityType, formatCategoryName } from "@/lib/severity";
 import { SeverityBadge } from "@/components/SeverityBadge";
@@ -83,6 +86,7 @@ const SPEECH_LANGUAGES = [
 
 interface SubmittedReport {
   id: string;
+  trackingCode?: string;
   title: string;
   category: string;
   location: string;
@@ -156,6 +160,7 @@ export default function ReportPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submittedIncident, setSubmittedIncident] = useState<SubmittedReport | null>(null);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   // Load saved contact on mount
   useEffect(() => {
@@ -652,6 +657,26 @@ export default function ReportPage() {
         } catch {}
       }
 
+      // Save to localStorage under myReports (keep last 10)
+      if (data.trackingCode) {
+        try {
+          const raw = localStorage.getItem("myReports");
+          const existing = raw ? JSON.parse(raw) : [];
+          const list = Array.isArray(existing) ? existing : [];
+          const updated = [
+            {
+              code: data.trackingCode,
+              category: data.category,
+              createdAt: data.createdAt,
+            },
+            ...list.filter((item: any) => item.code !== data.trackingCode),
+          ].slice(0, 10);
+          localStorage.setItem("myReports", JSON.stringify(updated));
+        } catch (e) {
+          console.error("Failed to save report to myReports", e);
+        }
+      }
+
       setSubmittedIncident(data);
     } catch (err: any) {
       setSubmitError(err.message || "Failed to submit report. Please try again.");
@@ -695,48 +720,124 @@ export default function ReportPage() {
 
   // CONFIRMATION SCREEN
   if (submittedIncident) {
+    const trackingCode = submittedIncident.trackingCode || submittedIncident.id;
+    const shareUrl =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/track/${trackingCode}`
+        : `/track/${trackingCode}`;
+    const shareMessage = encodeURIComponent(
+      `Emergency Report ${trackingCode} (${submittedIncident.category}) has been submitted. Track response status live: ${shareUrl}`
+    );
+
+    const handleCopyCode = () => {
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        navigator.clipboard.writeText(trackingCode);
+        setCopiedCode(true);
+        setTimeout(() => setCopiedCode(false), 2500);
+      }
+    };
+
     return (
       <div className="max-w-xl mx-auto px-4 py-12 bg-cream">
-        <div className="rounded-2xl border border-slate/40 bg-cardBg p-6 sm:p-8 shadow-xl text-center">
-          <div className="h-16 w-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4 border border-emerald-300">
+        <div className="rounded-2xl border border-slate/40 bg-cardBg p-6 sm:p-8 shadow-xl text-center space-y-6">
+          <div className="h-16 w-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-300 shadow-inner">
             <Check className="h-8 w-8 stroke-[3]" />
           </div>
 
-          <h2 className="text-2xl font-black text-navy">
-            Emergency Report Submitted
-          </h2>
-          <p className="mt-1 text-sm text-navy/70 font-mono font-bold">
-            ID #{submittedIncident.id}
-          </p>
+          <div>
+            <h2 className="text-2xl font-black text-navy">
+              Emergency Report Submitted
+            </h2>
+            <p className="mt-1 text-xs text-navy/70 font-semibold">
+              Your incident has been dispatched to emergency triage dispatch.
+            </p>
+          </div>
 
-          <div className="my-6 flex flex-col items-center justify-center gap-2 p-5 rounded-2xl bg-cream/70 border border-slate/30">
-            <span className="text-xs font-bold text-slate-dark uppercase tracking-wider">
+          {/* Citizen Tracking Code Box */}
+          <div className="p-5 rounded-2xl bg-cream/90 border-2 border-burgundy/30 shadow-sm space-y-3">
+            <span className="text-xs font-black uppercase tracking-wider text-slate-dark block">
+              Citizen Tracking Reference Code
+            </span>
+            <div className="font-mono text-3xl sm:text-4xl font-black text-burgundy tracking-widest selection:bg-burgundy selection:text-cream">
+              {trackingCode}
+            </div>
+            <p className="text-[11px] text-navy/70 font-medium">
+              Save this code to check real-time responder arrival, ETA, and public progress updates without logging in.
+            </p>
+
+            {/* Action buttons for tracking code */}
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleCopyCode}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-navy text-cream hover:bg-navy-light transition shadow-sm"
+              >
+                {copiedCode ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                    <span>Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5" />
+                    <span>Copy code</span>
+                  </>
+                )}
+              </button>
+
+              <a
+                href={`https://wa.me/?text=${shareMessage}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-[#25D366] text-white hover:opacity-90 transition shadow-sm"
+              >
+                <Share2 className="h-3.5 w-3.5" />
+                <span>Share on WhatsApp</span>
+              </a>
+            </div>
+          </div>
+
+          {/* Primary Action: Track this report */}
+          <div>
+            <Link
+              href={`/track/${trackingCode}`}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-burgundy py-3.5 px-6 text-sm font-black text-cream hover:bg-burgundy-light transition shadow-md"
+            >
+              <span>Track This Report Live</span>
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+
+          {/* Triage Summary */}
+          <div className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-cream/50 border border-slate/30">
+            <span className="text-[11px] font-bold text-slate-dark uppercase tracking-wider">
               Assigned Priority Tier
             </span>
             <SeverityBadge severity={submittedIncident.severity} size="lg" />
             {submittedIncident.severityScore !== undefined && (
-              <span className="text-xs text-navy/70 mt-1 font-semibold">
+              <span className="text-xs text-navy/70 mt-0.5 font-semibold">
                 Triage Score: <strong>{submittedIncident.severityScore} pts</strong>
               </span>
             )}
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3 mt-6">
+          {/* Secondary Actions */}
+          <div className="flex flex-col sm:flex-row gap-3 pt-2 border-t border-slate/30">
             <Link
               href="/admin"
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-navy px-4 py-3 text-sm font-bold text-cream hover:bg-navy-light transition shadow-sm"
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-navy/10 hover:bg-navy/20 px-4 py-2.5 text-xs font-bold text-navy transition"
             >
-              <span>View On Dashboard</span>
-              <ExternalLink className="h-4 w-4" />
+              <span>Command Dashboard</span>
+              <ExternalLink className="h-3.5 w-3.5" />
             </Link>
 
             <button
               type="button"
               onClick={resetForm}
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-burgundy px-4 py-3 text-sm font-bold text-cream hover:bg-burgundy-light transition shadow-sm"
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-slate/40 hover:bg-cream px-4 py-2.5 text-xs font-bold text-navy transition"
             >
-              <PlusCircle className="h-4 w-4" />
-              <span>Report Another</span>
+              <PlusCircle className="h-3.5 w-3.5" />
+              <span>Report Another Incident</span>
             </button>
           </div>
         </div>

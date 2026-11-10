@@ -30,6 +30,7 @@ model Team {
 
 model Incident {
   id             String          @id @default(cuid())
+  trackingCode   String?         @unique // "ERP-" + 6 alphanumeric chars
   title          String
   description    String
   category       String          // FIRE | ROAD_ACCIDENT | MEDICAL | FLOOD | BUILDING_COLLAPSE | OTHER
@@ -56,6 +57,7 @@ model Incident {
   updatedAt      DateTime        @updatedAt
   backupTeams    IncidentTeam[]
   backupRequests BackupRequest[]
+  events         IncidentEvent[]
 }
 
 model IncidentTeam {
@@ -88,4 +90,14 @@ model BackupRequest {
   resolvedAt       DateTime?
   fulfilledTeamIds String         @default("[]") // JSON string of team IDs
   incidentTeams    IncidentTeam[]
+}
+
+model IncidentEvent {
+  id              String   @id @default(cuid())
+  incidentId      String
+  incident        Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  type            String   // REPORTED | ASSIGNED | EN_ROUTE | ARRIVED | BACKUP_REQUESTED | BACKUP_ASSIGNED | RESOLVED | REOPENED
+  publicMessage   String?  // citizen-friendly; null means internal only
+  internalMessage String
+  createdAt       DateTime @default(now())
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rankTeams, haversine, calculateEtaMinutes } from "@/lib/assignment";
+import { logEvent } from "@/lib/events";
 
 export const dynamic = "force-dynamic";
 
@@ -125,6 +126,14 @@ export async function POST(
 
       return { updatedIncident, updatedTeam, distanceKm: calculatedDistance, etaMinutes: calculatedEta };
     });
+
+    const etaText = result.etaMinutes ? `${result.etaMinutes}` : "10";
+    await logEvent(
+      result.updatedIncident.id,
+      "ASSIGNED",
+      `A ${result.updatedTeam.category} team (${result.updatedTeam.code}) has been assigned. Estimated arrival: ${etaText} min.`,
+      `Assigned primary team ${result.updatedTeam.code} (${result.updatedTeam.name}). Distance: ${result.distanceKm ? result.distanceKm.toFixed(1) : "?"} km, ETA: ${etaText} min.`
+    );
 
     return NextResponse.json({
       success: true,

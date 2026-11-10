@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTeam } from "@/lib/teamAuth";
+import { logEvent } from "@/lib/events";
 
 export async function POST(request: NextRequest) {
   try {
@@ -83,6 +84,13 @@ export async function POST(request: NextRequest) {
         },
       },
     });
+
+    await logEvent(
+      incidentId,
+      "BACKUP_REQUESTED",
+      "Additional help is on the way.",
+      `Team ${team.code} requested backup: ${people} personnel${teamType ? ` (${teamType})` : ""}.${note?.trim() ? ` Note: ${note.trim()}` : ""}`
+    );
 
     return NextResponse.json(backupRequest, { status: 201 });
   } catch (error) {

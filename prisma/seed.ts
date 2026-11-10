@@ -299,11 +299,20 @@ async function main() {
     },
   ];
 
-  for (const inc of sampleIncidents) {
+  const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  function genCode(idx: number): string {
+    return `ERP-SEED${String(idx + 1).padStart(2, "0")}`;
+  }
+
+  for (let i = 0; i < sampleIncidents.length; i++) {
+    const inc = sampleIncidents[i];
     await prisma.incident.upsert({
       where: { id: inc.id },
       update: {},
-      create: inc,
+      create: {
+        ...inc,
+        trackingCode: genCode(i),
+      },
     });
   }
   console.log(`✓ 10 Sample incidents verified/seeded.`);

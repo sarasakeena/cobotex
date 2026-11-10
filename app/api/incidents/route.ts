@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculateSeverity, formatCategoryName, CategoryType } from "@/lib/severity";
 import { calculatePriority } from "@/lib/priority";
+import { generateTrackingCode, logEvent } from "@/lib/events";
 
 export const dynamic = "force-dynamic";
 
@@ -201,9 +202,18 @@ export async function POST(request: NextRequest) {
       description: description.trim(),
     });
 
+    // Generate citizen tracking code
+    let trackingCode = generateTrackingCode();
+    // Ensure uniqueness
+    const existingCode = await prisma.incident.findUnique({ where: { trackingCode } });
+    if (existingCode) {
+      trackingCode = generateTrackingCode();
+    }
+
     // Save to Database
     const newIncident = await prisma.incident.create({
       data: {
+        trackingCode,
         title: finalTitle.trim(),
         description: description.trim(),
         category,
@@ -222,6 +232,14 @@ export async function POST(request: NextRequest) {
         assignedTeam: true,
       },
     });
+
+    // Log REPORTED event
+    await logEvent(
+      newIncident.id,
+      "REPORTED",
+      "Your report was received.",
+      `Incident reported: ${newIncident.title}. Category: ${newIncident.category}, Severity: ${newIncident.severity}.`
+    );
 
     const priorityResult = calculatePriority({
       severity: newIncident.severity,

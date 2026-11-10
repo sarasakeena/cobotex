@@ -17,10 +17,13 @@ import {
   AlertCircle,
   Shield,
   ArrowRight,
+  Copy,
+  Check,
 } from "lucide-react";
 
 export interface IncidentItem {
   id: string;
+  trackingCode?: string | null;
   title: string;
   description: string;
   category: string;
@@ -69,6 +72,7 @@ export function IncidentTable({
   const [selectedDeleteId, setSelectedDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const selectedIncident = incidents.find((i) => i.id === selectedDeleteId);
 
@@ -218,13 +222,37 @@ export function IncidentTable({
 
                     {/* Title & Location */}
                     <td className="px-4 py-3 align-top min-w-[200px]">
-                      <div className="flex items-start gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <Link
                           href={`/admin/incidents/${incident.id}`}
                           className="font-bold text-navy hover:text-burgundy hover:underline line-clamp-1 text-sm"
                         >
                           {incident.title}
                         </Link>
+                        {incident.trackingCode && (
+                          <span className="inline-flex items-center gap-1 font-mono text-[10px] font-bold text-navy/80 bg-navy/10 px-1.5 py-0.5 rounded border border-navy/20">
+                            <span>{incident.trackingCode}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (typeof navigator !== "undefined" && navigator.clipboard) {
+                                  navigator.clipboard.writeText(incident.trackingCode!);
+                                  setCopiedId(incident.id);
+                                  setTimeout(() => setCopiedId(null), 2000);
+                                }
+                              }}
+                              title="Copy citizen tracking code"
+                              className="text-navy hover:text-burgundy"
+                            >
+                              {copiedId === incident.id ? (
+                                <Check className="h-2.5 w-2.5 text-emerald-600" />
+                              ) : (
+                                <Copy className="h-2.5 w-2.5" />
+                              )}
+                            </button>
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-navy/70 line-clamp-1 mt-0.5 font-medium">
                         {incident.description}

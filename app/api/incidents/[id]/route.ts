@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculateSeverity } from "@/lib/severity";
 import { calculatePriority } from "@/lib/priority";
+import { logEvent, buildTimelineEvents } from "@/lib/events";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,9 @@ export async function GET(
           },
           orderBy: { createdAt: "desc" },
         },
+        events: {
+          orderBy: { createdAt: "asc" },
+        },
       },
     });
 
@@ -81,9 +85,12 @@ export async function GET(
       status: incident.status,
     });
 
+    const timeline = buildTimelineEvents(incident);
+
     return NextResponse.json({
       ...incident,
       tags: parsedTags,
+      events: timeline,
       severityScore: severityResult.score,
       severityReasons: severityResult.reasons,
       priority: priorityResult,
@@ -185,6 +192,13 @@ export async function PATCH(
           include: { assignedTeam: true, backupTeams: { include: { team: true } } },
         });
       });
+
+      await logEvent(
+        id,
+        "REOPENED",
+        "Your case was reopened by the response team.",
+        `Incident reopened to IN_PROGRESS. Response team ${primaryTeam.code} re-engaged.`
+      );
 
       return NextResponse.json(reopened);
     }
@@ -289,6 +303,22 @@ export async function PATCH(
         include: { assignedTeam: true, backupTeams: { include: { team: true } } },
       });
     });
+
+    if (status === "RESOLVED") {
+      await logEvent(
+        id,
+        "RESOLVED",
+        "This emergency has been marked resolved by the response team.",
+        `Incident marked RESOLVED.${updated.resolutionNote ? ` Note: ${updated.resolutionNote}` : ""}`
+      );
+    } else if (status === "REPORTED") {
+      await logEvent(
+        id,
+        "REPORTED",
+        "Your report is under review.",
+        "Response units unassigned and incident returned to REPORTED status."
+      );
+    }
 
     return NextResponse.json(updated);
   } catch (error) {

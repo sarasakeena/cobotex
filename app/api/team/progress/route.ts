@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTeam } from "@/lib/teamAuth";
+import { logEvent } from "@/lib/events";
 
 export async function POST(request: NextRequest) {
   try {
@@ -84,6 +85,13 @@ export async function POST(request: NextRequest) {
         }
       });
 
+      await logEvent(
+        incident.id,
+        "EN_ROUTE",
+        "The team is on the way.",
+        `Response unit ${team.code} (${team.category}) reported en route to scene.`
+      );
+
       return NextResponse.json({
         success: true,
         message: `${team.code} marked en route to incident.`,
@@ -109,6 +117,13 @@ export async function POST(request: NextRequest) {
         }
       });
 
+      await logEvent(
+        incident.id,
+        "ARRIVED",
+        "The team has arrived and is working at the location.",
+        `Response unit ${team.code} arrived on site. Operation active.`
+      );
+
       return NextResponse.json({
         success: true,
         message: `${team.code} arrived on site. Incident set to IN_PROGRESS.`,
@@ -120,6 +135,7 @@ export async function POST(request: NextRequest) {
       // RESOLVED (from any assigned team): set incident status RESOLVED, resolvedAt, resolutionNote;
       // set ALL teams on that incident (primary and backup) AVAILABLE with currentIncidentId null;
       // mark IncidentTeam rows released. Run in a transaction.
+      const resolutionText = note?.trim() || `Resolved by ${team.code}`;
       await prisma.$transaction(async (tx) => {
         // 1. Update incident
         await tx.incident.update({
@@ -127,7 +143,7 @@ export async function POST(request: NextRequest) {
           data: {
             status: "RESOLVED",
             resolvedAt: now,
-            resolutionNote: note?.trim() || `Resolved by ${team.code}`,
+            resolutionNote: resolutionText,
           },
         });
 
@@ -162,6 +178,13 @@ export async function POST(request: NextRequest) {
           });
         }
       });
+
+      await logEvent(
+        incident.id,
+        "RESOLVED",
+        "This emergency has been marked resolved by the response team.",
+        `Incident marked RESOLVED by team ${team.code}. Note: ${resolutionText}`
+      );
 
       return NextResponse.json({
         success: true,

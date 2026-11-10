@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Siren, LayoutDashboard, PlusCircle, Users, Map, Shield } from "lucide-react";
+import { Siren, LayoutDashboard, PlusCircle, Users, Map, Shield, Search } from "lucide-react";
 
 export function Header() {
   const pathname = usePathname();
@@ -86,6 +86,18 @@ export function Header() {
             >
               <Shield className="h-4 w-4 text-burgundy-light" />
               <span>Team Portal</span>
+            </Link>
+
+            <Link
+              href="/track"
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                pathname.startsWith("/track")
+                  ? "bg-navy-light text-cream"
+                  : "text-cream/80 hover:text-cream hover:bg-navy-light/60"
+              }`}
+            >
+              <Search className="h-4 w-4 text-slate-light" />
+              <span>Track</span>
             </Link>
 
             <Link

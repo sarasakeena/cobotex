@@ -22,6 +22,7 @@ import {
   Radio,
   Timer,
   Check,
+  Search,
 } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { CategoryChart } from "@/components/CategoryChart";
@@ -60,6 +61,7 @@ export default function AdminDashboardPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
   const [severityFilter, setSeverityFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
   const playAlertBeep = () => {
     try {
@@ -196,6 +198,16 @@ export default function AdminDashboardPage() {
 
   // Filtered incidents
   const filteredIncidents = incidents.filter((incident) => {
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      const matchCode = incident.trackingCode?.toLowerCase().includes(q);
+      const matchTitle = incident.title?.toLowerCase().includes(q);
+      const matchLoc = incident.location?.toLowerCase().includes(q);
+      const matchId = incident.id?.toLowerCase().includes(q);
+      if (!matchCode && !matchTitle && !matchLoc && !matchId) {
+        return false;
+      }
+    }
     if (categoryFilter !== "ALL" && incident.category !== categoryFilter) {
       return false;
     }
@@ -221,12 +233,14 @@ export default function AdminDashboardPage() {
   const activeFiltersCount =
     (categoryFilter !== "ALL" ? 1 : 0) +
     (severityFilter !== "ALL" ? 1 : 0) +
-    (statusFilter !== "ALL" ? 1 : 0);
+    (statusFilter !== "ALL" ? 1 : 0) +
+    (searchQuery.trim() ? 1 : 0);
 
   const clearFilters = () => {
     setCategoryFilter("ALL");
     setSeverityFilter("ALL");
     setStatusFilter("ALL");
+    setSearchQuery("");
   };
 
   return (
@@ -497,6 +511,27 @@ export default function AdminDashboardPage() {
 
           {/* Filter Controls */}
           <div className="flex flex-wrap items-center gap-2">
+            {/* Search Box */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search code (ERP-...), title..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="text-xs font-semibold rounded-xl border border-slate/40 bg-cardBg text-navy pl-8 pr-3 py-1.5 focus:border-burgundy focus:outline-none focus:ring-1 focus:ring-burgundy shadow-2xs w-48 sm:w-60 placeholder:text-slate"
+              />
+              <Search className="h-3.5 w-3.5 text-slate absolute left-2.5 top-2.5 pointer-events-none" />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-2 text-slate hover:text-navy"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+
             <div className="flex items-center gap-1.5 text-xs font-bold text-navy mr-1">
               <SlidersHorizontal className="h-3.5 w-3.5 text-slate" />
               <span>Filter:</span>

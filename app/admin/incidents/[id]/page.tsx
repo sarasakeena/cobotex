@@ -30,6 +30,8 @@ import {
   CheckCheck,
   Play,
   RotateCw,
+  Copy,
+  History,
 } from "lucide-react";
 import { formatCategoryName } from "@/lib/severity";
 import { SeverityBadge } from "@/components/SeverityBadge";
@@ -52,6 +54,7 @@ const IncidentDetailMap = dynamic(
 
 interface IncidentDetail {
   id: string;
+  trackingCode?: string | null;
   title: string;
   description: string;
   category: string;
@@ -97,6 +100,13 @@ interface IncidentDetail {
   };
   backupTeams?: any[];
   backupRequests?: any[];
+  events?: Array<{
+    id: string;
+    type: string;
+    publicMessage: string | null;
+    internalMessage: string;
+    createdAt: string;
+  }>;
 }
 
 interface CandidateTeam {
@@ -140,6 +150,7 @@ export default function IncidentDetailPage() {
   const [isFulfillingBackup, setIsFulfillingBackup] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [copiedTrackingCode, setCopiedTrackingCode] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   const showToast = (message: string, type: "success" | "error" = "success") => {
@@ -355,6 +366,21 @@ export default function IncidentDetailPage() {
       }).format(d);
     } catch {
       return dateStr;
+    }
+  };
+
+  const formatDateTime = (dateStr?: string | null) => {
+    if (!dateStr) return "";
+    try {
+      const d = new Date(dateStr);
+      return new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(d);
+    } catch {
+      return dateStr || "";
     }
   };
 
@@ -738,9 +764,47 @@ export default function IncidentDetailPage() {
                   )}
                 </div>
                 <h1 className="text-2xl font-black text-navy">{incident.title}</h1>
-                <p className="text-xs text-slate-dark mt-1 font-semibold">
-                  Report ID: <span className="font-mono text-navy">{incident.id}</span>
-                </p>
+                <div className="flex flex-wrap items-center gap-3 mt-1 text-xs">
+                  <span className="text-slate-dark font-semibold">
+                    Report ID: <span className="font-mono text-navy">{incident.id}</span>
+                  </span>
+                  {incident.trackingCode && (
+                    <div className="flex items-center gap-1.5 bg-burgundy/10 px-2.5 py-1 rounded-lg border border-burgundy/20">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-burgundy">
+                        Citizen Code:
+                      </span>
+                      <span className="font-mono font-black text-burgundy text-xs">
+                        {incident.trackingCode}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (typeof navigator !== "undefined" && navigator.clipboard) {
+                            navigator.clipboard.writeText(incident.trackingCode!);
+                            setCopiedTrackingCode(true);
+                            setTimeout(() => setCopiedTrackingCode(false), 2000);
+                          }
+                        }}
+                        className="text-navy hover:text-burgundy transition ml-1"
+                        title="Copy tracking code"
+                      >
+                        {copiedTrackingCode ? (
+                          <Check className="h-3 w-3 text-emerald-600" />
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
+                      </button>
+                      <Link
+                        href={`/track/${incident.trackingCode}`}
+                        target="_blank"
+                        className="text-navy/70 hover:text-burgundy transition ml-0.5"
+                        title="Open Citizen Tracking Portal"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </Link>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -873,6 +937,62 @@ export default function IncidentDetailPage() {
             assignedTeam={incident.assignedTeam}
             candidateTeams={candidates}
           />
+
+          {/* Incident Activity Log (Internal & Public Audit Trail) */}
+          <div className="bg-cardBg rounded-2xl border border-slate/40 p-5 shadow-sm space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate/30">
+              <div className="flex items-center gap-2">
+                <History className="h-4 w-4 text-burgundy" />
+                <h3 className="text-sm font-black text-navy uppercase tracking-wide">
+                  Incident Activity &amp; Audit Log
+                </h3>
+              </div>
+              <span className="text-xs font-bold text-slate-dark bg-cream px-2.5 py-0.5 rounded-lg border border-slate/30">
+                {incident.events?.length || 0} Events
+              </span>
+            </div>
+
+            {!incident.events || incident.events.length === 0 ? (
+              <p className="text-xs text-navy/60 font-medium py-3 text-center">
+                No activity logs recorded yet.
+              </p>
+            ) : (
+              <div className="space-y-3.5">
+                {incident.events.map((evt, idx) => (
+                  <div
+                    key={evt.id || idx}
+                    className="p-3.5 rounded-xl border border-slate/30 bg-cream/50 space-y-2 hover:bg-cream/80 transition"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-navy text-cream">
+                          {evt.type.replace(/_/g, " ")}
+                        </span>
+                        {evt.publicMessage && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            Public
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-dark">
+                        {formatDateTime(evt.createdAt)}
+                      </span>
+                    </div>
+
+                    <p className="text-xs font-bold text-navy leading-snug">
+                      {evt.internalMessage}
+                    </p>
+
+                    {evt.publicMessage && (
+                      <div className="text-[11px] text-navy/70 bg-cream/90 p-2 rounded-lg border border-slate/20 italic font-medium">
+                        Public: &ldquo;{evt.publicMessage}&rdquo;
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right Column (1 Col): Response Team Assignment & Priority Engine */}

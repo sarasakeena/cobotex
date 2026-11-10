@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rankTeams, haversine, calculateEtaMinutes } from "@/lib/assignment";
+import { logEvent } from "@/lib/events";
 
 export const dynamic = "force-dynamic";
 
@@ -171,6 +172,13 @@ export async function POST(
         peopleNeeded: backupReq.peopleNeeded,
       };
     });
+
+    await logEvent(
+      incident.id,
+      "BACKUP_ASSIGNED",
+      "Additional help is on the way.",
+      `Backup assigned: dispatched ${result.selectedTeams.map((t: any) => t.code).join(", ")} (${result.totalMembersCovered} personnel dispatched).`
+    );
 
     const isShort = result.totalMembersCovered < result.peopleNeeded;
     const shortCount = result.peopleNeeded - result.totalMembersCovered;
