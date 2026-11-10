@@ -1,0 +1,22 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Incident {
+  id             String   @id @default(cuid())
+  title          String
+  description    String
+  category       String   // FIRE | ROAD_ACCIDENT | MEDICAL | FLOOD | BUILDING_COLLAPSE | OTHER
+  location       String
+  peopleAffected Int      @default(0)
+  contactInfo    String?
+  severity       String   // LOW | MEDIUM | HIGH | CRITICAL
+  status         String   @default("REPORTED") // REPORTED | PENDING | IN_PROGRESS | RESOLVED
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
