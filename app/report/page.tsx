@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
@@ -15,19 +15,20 @@ import {
   Mic,
   MicOff,
   Check,
-  Copy,
   ChevronRight,
   ExternalLink,
   PlusCircle,
   X,
   Camera,
-  Image as ImageIcon,
   AlertCircle,
   Phone,
-  Volume2,
+  Sparkles,
+  Clock,
+  RotateCcw,
 } from "lucide-react";
 import { CategoryType, SeverityType, formatCategoryName } from "@/lib/severity";
 import { SeverityBadge } from "@/components/SeverityBadge";
+import { parseVoiceReport, ParsedVoiceReport } from "@/lib/voiceParser";
 
 // Dynamically import Leaflet Map Picker without SSR
 const MapPicker = dynamic(() => import("@/components/MapPicker"), {
@@ -87,7 +88,7 @@ const CATEGORIES: {
 ];
 
 const CATEGORY_TAGS: Record<CategoryType, string[]> = {
-  FIRE: ["Trapped inside", "Spreading", "Explosion risk", "Smoke"],
+  FIRE: ["Trapped inside", "Spreading", "Explosion risk", "Smoke", "Unconscious"],
   ROAD_ACCIDENT: ["Injuries", "Vehicle on fire", "Road blocked"],
   MEDICAL: ["Unconscious", "Bleeding", "Not breathing", "Chest pain"],
   FLOOD: ["Rising water", "People stranded", "Houses submerged"],
@@ -133,13 +134,14 @@ export default function ReportPage() {
   const [locLoading, setLocLoading] = useState(false);
   const [locError, setLocError] = useState<string | null>(null);
   const [showMap, setShowMap] = useState(false);
+  const [locationSource, setLocationSource] = useState<"gps" | "geocode" | "manual" | null>(null);
 
   // 3. People Affected
   const [selectedPeoplePreset, setSelectedPeoplePreset] = useState<number | null>(1);
   const [exactPeople, setExactPeople] = useState<string>("");
   const [isExactOpen, setIsExactOpen] = useState(false);
 
-  // 4. Quick Tags (multi-select, reset on category change)
+  // 4. Quick Tags
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
   // 5. Voice & Description
@@ -149,6 +151,21 @@ export default function ReportPage() {
   const [speechLang, setSpeechLang] = useState("en-IN");
   const [speechError, setSpeechError] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const transcriptAccumulatorRef = useRef<string>("");
+
+  // Track fields modified manually by the user
+  const [userModified, setUserModified] = useState({
+    category: false,
+    location: false,
+    people: false,
+    tags: false,
+    phone: false,
+    description: false,
+  });
+
+  // Track fields filled by voice
+  const [voiceFilledFields, setVoiceFilledFields] = useState<Set<string>>(new Set());
 
   // 6. Contact
   const [contactInfo, setContactInfo] = useState("");
@@ -156,11 +173,15 @@ export default function ReportPage() {
   // 7. Optional Photo
   const [photoData, setPhotoData] = useState<string | null>(null);
 
+  // Ready Check & Auto-submit Countdown
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [missingFieldNotice, setMissingFieldNotice] = useState<string | null>(null);
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   // State
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submittedIncident, setSubmittedIncident] = useState<SubmittedReport | null>(null);
-  const [copiedId, setCopiedId] = useState(false);
 
   // Load saved contact on mount
   useEffect(() => {
@@ -172,60 +193,256 @@ export default function ReportPage() {
     } catch {}
   }, []);
 
+  // Cancel countdown if user touches any input
+  const cancelCountdown = useCallback(() => {
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    setCountdown(null);
+  }, []);
+
   // Category switch handler: resets tags
   const handleCategorySelect = (newCat: CategoryType) => {
+    cancelCountdown();
+    setUserModified((prev) => ({ ...prev, category: true }));
     setCategory(newCat);
     setSelectedTags([]);
   };
 
   // Tag toggle handler
   const handleTagToggle = (tag: string) => {
+    cancelCountdown();
+    setUserModified((prev) => ({ ...prev, tags: true }));
     setSelectedTags((prev) =>
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
     );
   };
 
-  // Location via Geolocation API
-  const handleGetCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      setLocError("Geolocation is not supported by your browser.");
-      setShowMap(true);
-      return;
-    }
-
-    setLocLoading(true);
-    setLocError(null);
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setCoords({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        });
-        setLocLoading(false);
-        setLocError(null);
-      },
-      (error) => {
-        setLocLoading(false);
-        let msg = "Could not fetch GPS location. Please tap pin on map.";
-        if (error.code === error.PERMISSION_DENIED) {
-          msg = "Location permission denied. Use map to tap your location.";
-        } else if (error.code === error.TIMEOUT) {
-          msg = "GPS location request timed out. Use map to tap your location.";
+  // Geocode address using Nominatim OpenStreetMap API
+  const geocodeAddress = async (
+    query: string
+  ): Promise<{ lat: number; lng: number } | null> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+          query
+        )}&countrycodes=in`,
+        {
+          signal: controller.signal,
+          headers: { "Accept-Language": "en" },
         }
-        setLocError(msg);
-        setShowMap(true);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 8000,
-        maximumAge: 0,
+      );
+      clearTimeout(timeoutId);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data && data.length > 0) {
+        const lat = parseFloat(data[0].lat);
+        const lng = parseFloat(data[0].lon);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          return { lat, lng };
+        }
       }
-    );
+      return null;
+    } catch {
+      clearTimeout(timeoutId);
+      return null;
+    }
   };
 
-  // Speech Recognition (Web Speech API)
+  // Geolocation acquisition
+  const requestCurrentLocation = useCallback(
+    (onSuccess?: (pos: { lat: number; lng: number }) => void) => {
+      if (!navigator.geolocation) {
+        setLocError("Geolocation not supported. Please drop pin on map.");
+        setShowMap(true);
+        return;
+      }
+
+      setLocLoading(true);
+      setLocError(null);
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const pos = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          };
+          setCoords(pos);
+          setLocationSource("gps");
+          setLocLoading(false);
+          setLocError(null);
+          if (onSuccess) onSuccess(pos);
+        },
+        (error) => {
+          setLocLoading(false);
+          let msg = "Could not fetch GPS. Please tap pin on map.";
+          if (error.code === error.PERMISSION_DENIED) {
+            msg = "Location permission denied. Please tap pin on map.";
+          } else if (error.code === error.TIMEOUT) {
+            msg = "GPS timed out. Please tap pin on map.";
+          }
+          setLocError(msg);
+          setShowMap(true);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 8000,
+          maximumAge: 0,
+        }
+      );
+    },
+    []
+  );
+
+  // Manual GPS Button click
+  const handleGetCurrentLocation = () => {
+    cancelCountdown();
+    setUserModified((prev) => ({ ...prev, location: true }));
+    requestCurrentLocation();
+  };
+
+  // Trigger auto-submit countdown
+  const triggerAutoSubmitCountdown = useCallback(() => {
+    cancelCountdown();
+    setMissingFieldNotice(null);
+    setCountdown(5);
+
+    let currentCount = 5;
+    countdownIntervalRef.current = setInterval(() => {
+      currentCount -= 1;
+      if (currentCount <= 0) {
+        if (countdownIntervalRef.current) {
+          clearInterval(countdownIntervalRef.current);
+          countdownIntervalRef.current = null;
+        }
+        setCountdown(0);
+        // Automatically submit the form
+        submitReportDirect();
+      } else {
+        setCountdown(currentCount);
+      }
+    }, 1000);
+  }, [cancelCountdown]);
+
+  // Execute Smart Voice Parser on transcript
+  const processVoiceTranscript = useCallback(
+    async (fullTranscript: string) => {
+      if (!fullTranscript.trim()) return;
+
+      const parsed: ParsedVoiceReport = parseVoiceReport(fullTranscript);
+      const newVoiceFields = new Set<string>();
+
+      // 1. Category
+      let resolvedCategory = category;
+      if (parsed.category && !userModified.category) {
+        setCategory(parsed.category);
+        resolvedCategory = parsed.category;
+        newVoiceFields.add("category");
+      }
+
+      // 2. People Affected
+      if (parsed.peopleAffected !== undefined && !userModified.people) {
+        newVoiceFields.add("people");
+        const count = parsed.peopleAffected;
+        const matchingPreset = PEOPLE_PRESETS.find((p) => p.value === count);
+        if (matchingPreset) {
+          setIsExactOpen(false);
+          setSelectedPeoplePreset(matchingPreset.value);
+        } else {
+          // If 6, set exact number to 6
+          setIsExactOpen(true);
+          setExactPeople(String(count));
+          setSelectedPeoplePreset(null);
+        }
+      }
+
+      // 3. Quick Tags
+      if (parsed.tags && parsed.tags.length > 0 && !userModified.tags) {
+        setSelectedTags(parsed.tags);
+        newVoiceFields.add("tags");
+      }
+
+      // 4. Contact Phone
+      if (parsed.contactPhone && !userModified.phone) {
+        setContactInfo(parsed.contactPhone);
+        newVoiceFields.add("phone");
+      }
+
+      // 5. Address text
+      let resolvedAddress = address;
+      if (parsed.addressText && !userModified.location) {
+        setAddress(parsed.addressText);
+        resolvedAddress = parsed.addressText;
+        newVoiceFields.add("address");
+      }
+
+      // 6. Description Textarea
+      if (!userModified.description) {
+        setDescription(fullTranscript);
+        newVoiceFields.add("description");
+      }
+
+      setVoiceFilledFields(newVoiceFields);
+
+      // Handle Location Geocoding or GPS fallback
+      let finalCoords = coords;
+      if (!userModified.location && !coords) {
+        if (resolvedAddress) {
+          setLocLoading(true);
+          const geoRes = await geocodeAddress(resolvedAddress);
+          setLocLoading(false);
+          if (geoRes) {
+            setCoords(geoRes);
+            finalCoords = geoRes;
+            setLocationSource("geocode");
+            newVoiceFields.add("location");
+          } else {
+            // Geocoding failed -> try GPS
+            requestCurrentLocation((gpsCoords) => {
+              finalCoords = gpsCoords;
+              // Check ready state with GPS coords
+              if (resolvedCategory && gpsCoords) {
+                triggerAutoSubmitCountdown();
+              }
+            });
+          }
+        } else {
+          // No address in speech -> immediately trigger geolocation
+          requestCurrentLocation((gpsCoords) => {
+            finalCoords = gpsCoords;
+            if (resolvedCategory && gpsCoords) {
+              triggerAutoSubmitCountdown();
+            }
+          });
+        }
+      }
+
+      // READY CHECK: If category + location (coordinates or address) are present
+      const isComplete = Boolean(resolvedCategory && (finalCoords || resolvedAddress));
+      if (isComplete) {
+        triggerAutoSubmitCountdown();
+      } else {
+        setMissingFieldNotice("Almost done: please confirm your location pin on the map.");
+        setShowMap(true);
+      }
+    },
+    [
+      category,
+      address,
+      coords,
+      userModified,
+      requestCurrentLocation,
+      triggerAutoSubmitCountdown,
+    ]
+  );
+
+  // Toggle voice recognition
   const toggleSpeechRecognition = () => {
+    cancelCountdown();
+
     const SpeechRecognition =
       (window as any).SpeechRecognition ||
       (window as any).webkitSpeechRecognition;
@@ -247,6 +464,7 @@ export default function ReportPage() {
 
     try {
       setSpeechError(null);
+      transcriptAccumulatorRef.current = "";
       const recognition = new SpeechRecognition();
       recognitionRef.current = recognition;
       recognition.continuous = true;
@@ -273,17 +491,27 @@ export default function ReportPage() {
         setInterimText(interim);
 
         if (finalStr) {
-          setDescription((prev) => (prev ? `${prev.trim()} ${finalStr.trim()}` : finalStr.trim()));
+          transcriptAccumulatorRef.current = (
+            transcriptAccumulatorRef.current + " " + finalStr
+          ).trim();
+          setDescription((prev) =>
+            prev ? `${prev.trim()} ${finalStr.trim()}` : finalStr.trim()
+          );
         }
+
+        // 3-second silence detector
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = setTimeout(() => {
+          if (recognitionRef.current && isListening) {
+            recognitionRef.current.stop();
+          }
+        }, 3000);
       };
 
       recognition.onerror = (event: any) => {
-        console.warn("Speech recognition error:", event.error);
         if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-          setSpeechError("Microphone access denied. Please type in description box.");
-        } else if (event.error === "no-speech") {
-          // ignore silent pause
-        } else {
+          setSpeechError("Microphone access denied. Please type description.");
+        } else if (event.error !== "no-speech") {
           setSpeechError(`Voice error (${event.error}). Please type description.`);
         }
         setIsListening(false);
@@ -292,18 +520,24 @@ export default function ReportPage() {
       recognition.onend = () => {
         setIsListening(false);
         setInterimText("");
+        const fullSpoken = transcriptAccumulatorRef.current.trim();
+        if (fullSpoken) {
+          processVoiceTranscript(fullSpoken);
+        }
       };
 
       recognition.start();
-    } catch (err: any) {
-      setSpeechError("Could not start voice recognition. Please type your description.");
+    } catch {
+      setSpeechError("Could not start voice recognition. Please type description.");
       setIsListening(false);
     }
   };
 
-  // Clean up speech recognition on unmount
+  // Clean up timers & recognition on unmount
   useEffect(() => {
     return () => {
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
       if (recognitionRef.current) {
         try {
           recognitionRef.current.abort();
@@ -314,6 +548,7 @@ export default function ReportPage() {
 
   // Photo upload handler
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    cancelCountdown();
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
@@ -333,26 +568,23 @@ export default function ReportPage() {
     return selectedPeoplePreset ?? 1;
   };
 
-  // Location validity
-  const hasLocation = Boolean(coords || address.trim());
-
-  // Form submission
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!category || !hasLocation) return;
+  // Core Submit function
+  const submitReportDirect = async () => {
+    cancelCountdown();
+    if (!category || (!coords && !address.trim())) {
+      setMissingFieldNotice("Location is required. Please tap map or use GPS.");
+      return;
+    }
 
     setIsSubmitting(true);
     setSubmitError(null);
 
     const peopleCount = getPeopleAffectedCount();
-
-    // Auto-generate Title on submit: "<Category label> reported" + " - <address>" if address exists
     const categoryLabel = formatCategoryName(category);
     const autoTitle = address.trim()
       ? `${categoryLabel} reported - ${address.trim()}`
       : `${categoryLabel} reported`;
 
-    // Auto-generate Description: voice/typed text if present; otherwise built from selections
     let autoDesc = description.trim();
     if (!autoDesc) {
       const presetLabel =
@@ -381,12 +613,10 @@ export default function ReportPage() {
       });
 
       const data = await response.json();
-
       if (!response.ok) {
         throw new Error(data.error || "Failed to submit emergency report.");
       }
 
-      // Save contact to localStorage if provided
       if (contactInfo.trim()) {
         try {
           localStorage.setItem("crisis_contact_phone", contactInfo.trim());
@@ -401,15 +631,13 @@ export default function ReportPage() {
     }
   };
 
-  const handleCopyId = () => {
-    if (submittedIncident) {
-      navigator.clipboard.writeText(submittedIncident.id);
-      setCopiedId(true);
-      setTimeout(() => setCopiedId(false), 2000);
-    }
+  const handleManualFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    submitReportDirect();
   };
 
   const resetForm = () => {
+    cancelCountdown();
     setCategory("FIRE");
     setCoords(null);
     setAddress("");
@@ -421,9 +649,20 @@ export default function ReportPage() {
     setPhotoData(null);
     setSubmitError(null);
     setSubmittedIncident(null);
+    setVoiceFilledFields(new Set());
+    setUserModified({
+      category: false,
+      location: false,
+      people: false,
+      tags: false,
+      phone: false,
+      description: false,
+    });
   };
 
-  // 4. AFTER SUBMIT CONFIRMATION SCREEN
+  const hasLocation = Boolean(coords || address.trim());
+
+  // CONFIRMATION SCREEN
   if (submittedIncident) {
     return (
       <div className="max-w-xl mx-auto px-4 py-12">
@@ -474,7 +713,6 @@ export default function ReportPage() {
     );
   }
 
-  // FAST, TAP-FIRST, VOICE-ENABLED FORM
   return (
     <div className="max-w-xl mx-auto px-4 py-6 sm:py-10 pb-28">
       {/* Top Banner */}
@@ -482,9 +720,12 @@ export default function ReportPage() {
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
             <span>Fast Emergency Intake</span>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">
+              Smart Voice
+            </span>
           </h1>
           <p className="text-xs text-slate-500">
-            Tap-first triage. 1-tap geolocation and voice transcript enabled.
+            Speak everything in one go or tap manually.
           </p>
         </div>
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold border border-red-200">
@@ -493,6 +734,71 @@ export default function ReportPage() {
         </span>
       </div>
 
+      {/* AUTO-SUBMIT COUNTDOWN BANNER */}
+      {countdown !== null && (
+        <div className="mb-6 rounded-2xl border-2 border-red-600 bg-red-600 text-white p-4 shadow-xl animate-fadeIn">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-white text-red-600 flex items-center justify-center font-extrabold text-lg shrink-0 shadow-inner">
+                {countdown}
+              </div>
+              <div>
+                <p className="font-extrabold text-sm sm:text-base">
+                  Report ready. Submitting in {countdown}...
+                </p>
+                <p className="text-[11px] text-red-100">
+                  Touch any field to pause &amp; edit.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-center">
+              <button
+                type="button"
+                onClick={submitReportDirect}
+                className="rounded-xl bg-white px-3.5 py-2 text-xs font-extrabold text-red-600 hover:bg-slate-100 transition shadow-sm"
+              >
+                Submit now
+              </button>
+              <button
+                type="button"
+                onClick={cancelCountdown}
+                className="rounded-xl bg-red-800 px-3.5 py-2 text-xs font-bold text-white hover:bg-red-900 transition"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={cancelCountdown}
+                className="p-1.5 text-xs text-red-200 hover:text-white underline"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MISSING FIELD NOTICE */}
+      {missingFieldNotice && (
+        <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4 text-xs font-medium text-amber-900 flex items-start gap-2.5 shadow-sm">
+          <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-bold">{missingFieldNotice}</p>
+            <p className="text-amber-700 mt-0.5">
+              Please drop a pin on the map or enter an address below to enable instant submit.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMissingFieldNotice(null)}
+            className="text-amber-600 hover:text-amber-900 p-0.5"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {submitError && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3.5 flex items-start gap-2.5 text-xs text-red-800 font-medium">
           <AlertCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
@@ -500,12 +806,27 @@ export default function ReportPage() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleManualFormSubmit} className="space-y-6">
         {/* 1. CATEGORY: 6 large icon tiles in a 2x3 grid */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
-            1. Select Emergency Category <span className="text-red-500">*</span>
-          </label>
+        <section
+          className={`rounded-2xl border bg-white p-4 sm:p-5 shadow-sm transition ${
+            voiceFilledFields.has("category")
+              ? "border-red-400 ring-2 ring-red-100"
+              : "border-slate-200"
+          }`}
+          onClick={cancelCountdown}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+              1. Emergency Category <span className="text-red-500">*</span>
+            </label>
+            {voiceFilledFields.has("category") && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 flex items-center gap-1">
+                <Sparkles className="h-3 w-3" /> Auto-detected
+              </span>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             {CATEGORIES.map((cat) => {
               const Icon = cat.icon;
@@ -539,14 +860,23 @@ export default function ReportPage() {
         </section>
 
         {/* 2. LOCATION */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm space-y-3">
+        <section
+          className={`rounded-2xl border bg-white p-4 sm:p-5 shadow-sm space-y-3 transition ${
+            !hasLocation && missingFieldNotice
+              ? "border-red-500 ring-2 ring-red-200"
+              : voiceFilledFields.has("location")
+              ? "border-red-400 ring-2 ring-red-100"
+              : "border-slate-200"
+          }`}
+          onClick={cancelCountdown}
+        >
           <div className="flex items-center justify-between">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
               2. Incident Location <span className="text-red-500">*</span>
             </label>
             {coords && (
               <span className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
-                <Check className="h-3 w-3" /> GPS Pin Set
+                <Check className="h-3 w-3" /> Position Set
               </span>
             )}
           </div>
@@ -561,7 +891,7 @@ export default function ReportPage() {
             {locLoading ? (
               <>
                 <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Acquiring GPS Position...</span>
+                <span>Acquiring Coordinates...</span>
               </>
             ) : (
               <>
@@ -571,7 +901,7 @@ export default function ReportPage() {
             )}
           </button>
 
-          {/* Confirmation Chip if coordinates acquired */}
+          {/* Coordinates Confirmation Chip */}
           {coords && (
             <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-3.5 py-2 text-xs text-emerald-800">
               <div className="flex items-center gap-1.5 font-mono">
@@ -580,16 +910,29 @@ export default function ReportPage() {
                   {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
                 </span>
                 <span className="text-[10px] text-emerald-600 font-sans">
-                  (GPS Confirmed)
+                  ({locationSource === "geocode" ? "Address Pin" : "GPS Pin"})
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowMap(!showMap)}
-                className="text-[11px] font-bold underline hover:text-emerald-900 ml-2"
-              >
-                {showMap ? "Hide Map" : "Adjust Pin"}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowMap(!showMap)}
+                  className="text-[11px] font-bold underline hover:text-emerald-900"
+                >
+                  {showMap ? "Hide Map" : "Adjust Pin"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCoords(null);
+                    setLocationSource(null);
+                  }}
+                  className="p-0.5 text-emerald-700 hover:text-red-600"
+                  title="Remove location coordinates"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
           )}
 
@@ -600,36 +943,57 @@ export default function ReportPage() {
             </div>
           )}
 
-          {/* Leaflet Map Picker fallback or user triggered */}
+          {/* Leaflet Map Picker */}
           {(showMap || (!coords && locError)) && (
             <div className="pt-2">
               <MapPicker
                 position={coords}
                 onPositionChange={(pos) => {
+                  cancelCountdown();
                   setCoords(pos);
+                  setLocationSource("manual");
                   setLocError(null);
+                  setMissingFieldNotice(null);
                 }}
               />
             </div>
           )}
 
-          {/* Optional Short Text Address / Landmark */}
+          {/* Address / Landmark text */}
           <div className="pt-1">
             <input
               type="text"
-              placeholder="Address, landmark or intersection (e.g. 5th Ave Gate, Sector 4)"
+              placeholder="Address, landmark or intersection (e.g. near T Nagar bus stand)"
               value={address}
-              onChange={(e) => setAddress(e.target.value)}
+              onChange={(e) => {
+                cancelCountdown();
+                setUserModified((p) => ({ ...p, location: true }));
+                setAddress(e.target.value);
+              }}
               className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
             />
           </div>
         </section>
 
         {/* 3. PEOPLE AFFECTED */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm space-y-3">
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-            3. Number of People Affected
-          </label>
+        <section
+          className={`rounded-2xl border bg-white p-4 sm:p-5 shadow-sm space-y-3 transition ${
+            voiceFilledFields.has("people")
+              ? "border-red-400 ring-2 ring-red-100"
+              : "border-slate-200"
+          }`}
+          onClick={cancelCountdown}
+        >
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+              3. Number of People Affected
+            </label>
+            {voiceFilledFields.has("people") && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 flex items-center gap-1">
+                <Sparkles className="h-3 w-3" /> Voice filled
+              </span>
+            )}
+          </div>
 
           <div className="grid grid-cols-4 gap-2">
             {PEOPLE_PRESETS.map((preset) => {
@@ -640,6 +1004,8 @@ export default function ReportPage() {
                   key={preset.label}
                   type="button"
                   onClick={() => {
+                    cancelCountdown();
+                    setUserModified((p) => ({ ...p, people: true }));
                     setIsExactOpen(false);
                     setSelectedPeoplePreset(preset.value);
                   }}
@@ -658,7 +1024,10 @@ export default function ReportPage() {
           <div className="pt-1 flex items-center justify-between text-xs">
             <button
               type="button"
-              onClick={() => setIsExactOpen(!isExactOpen)}
+              onClick={() => {
+                cancelCountdown();
+                setIsExactOpen(!isExactOpen);
+              }}
               className="text-xs text-slate-500 hover:text-slate-800 font-medium underline"
             >
               {isExactOpen ? "Use preset chips" : "Enter exact number instead"}
@@ -669,7 +1038,11 @@ export default function ReportPage() {
                 min="0"
                 placeholder="Exact count"
                 value={exactPeople}
-                onChange={(e) => setExactPeople(e.target.value)}
+                onChange={(e) => {
+                  cancelCountdown();
+                  setUserModified((p) => ({ ...p, people: true }));
+                  setExactPeople(e.target.value);
+                }}
                 className="w-28 rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-slate-900 focus:outline-none focus:border-red-500"
                 autoFocus
               />
@@ -677,13 +1050,27 @@ export default function ReportPage() {
           </div>
         </section>
 
-        {/* 4. QUICK TAGS (multi-select, resets with category) */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm space-y-2">
+        {/* 4. QUICK TAGS */}
+        <section
+          className={`rounded-2xl border bg-white p-4 sm:p-5 shadow-sm space-y-2 transition ${
+            voiceFilledFields.has("tags")
+              ? "border-red-400 ring-2 ring-red-100"
+              : "border-slate-200"
+          }`}
+          onClick={cancelCountdown}
+        >
           <div className="flex items-center justify-between">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
               4. Quick Tags ({formatCategoryName(category)})
             </label>
-            <span className="text-[11px] text-slate-400">Multi-select</span>
+            <div className="flex items-center gap-2">
+              {voiceFilledFields.has("tags") && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" /> Voice matched
+                </span>
+              )}
+              <span className="text-[11px] text-slate-400">Multi-select</span>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2 pt-1">
@@ -707,11 +1094,18 @@ export default function ReportPage() {
           </div>
         </section>
 
-        {/* 5. VOICE MESSAGE + EDITABLE DESCRIPTION */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm space-y-3">
+        {/* 5. VOICE MESSAGE + SMART PARSE */}
+        <section
+          className={`rounded-2xl border bg-white p-4 sm:p-5 shadow-sm space-y-3 transition ${
+            isListening ? "border-red-500 ring-4 ring-red-200/50" : "border-slate-200"
+          }`}
+        >
           <div className="flex items-center justify-between">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-              5. Voice Message &amp; Details
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+              <span>5. Smart Voice Report</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-50 text-red-600 font-bold border border-red-200">
+                Auto-fill
+              </span>
             </label>
 
             {/* Language Selector */}
@@ -745,7 +1139,7 @@ export default function ReportPage() {
             {isListening ? (
               <>
                 <MicOff className="h-5 w-5" />
-                <span>Listening... Tap again to stop</span>
+                <span>Listening... Tap again or pause 3s to auto-fill</span>
               </>
             ) : (
               <>
@@ -755,8 +1149,21 @@ export default function ReportPage() {
             )}
           </button>
 
+          {/* Helper sentence hint */}
+          <div className="rounded-xl bg-slate-50 border border-slate-200 p-2.5 text-[11px] text-slate-600 flex items-start gap-2">
+            <Sparkles className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold text-slate-800">
+                Speak everything in one go:
+              </span>{" "}
+              <span>
+                &ldquo;Fire in a building near T Nagar bus stand, six people trapped and one is unconscious, my number is 98765 43210&rdquo;
+              </span>
+            </div>
+          </div>
+
           {interimText && (
-            <p className="text-xs text-red-600 italic bg-red-50/50 p-2 rounded-lg border border-red-100">
+            <p className="text-xs text-red-600 italic bg-red-50/50 p-2 rounded-lg border border-red-100 animate-pulse">
               {interimText}...
             </p>
           )}
@@ -770,26 +1177,48 @@ export default function ReportPage() {
           {/* Editable Description Textarea */}
           <textarea
             rows={3}
-            placeholder="Transcript or typed notes: specific hazards, trapped persons, injuries, gas leaks..."
+            placeholder="Voice transcript or typed notes: specific hazards, trapped persons, gas leaks..."
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => {
+              cancelCountdown();
+              setUserModified((p) => ({ ...p, description: true }));
+              setDescription(e.target.value);
+            }}
             className="w-full rounded-xl border border-slate-300 p-3 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 leading-relaxed"
           />
         </section>
 
         {/* 6. OPTIONAL CONTACT & PHOTO */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm space-y-4">
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-            6. Contact &amp; Photo (Optional)
-          </label>
+        <section
+          className={`rounded-2xl border bg-white p-4 sm:p-5 shadow-sm space-y-4 transition ${
+            voiceFilledFields.has("phone")
+              ? "border-red-400 ring-2 ring-red-100"
+              : "border-slate-200"
+          }`}
+          onClick={cancelCountdown}
+        >
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+              6. Contact &amp; Photo (Optional)
+            </label>
+            {voiceFilledFields.has("phone") && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 flex items-center gap-1">
+                <Sparkles className="h-3 w-3" /> Voice extracted
+              </span>
+            )}
+          </div>
 
           <div className="flex items-center gap-2">
             <Phone className="h-4 w-4 text-slate-400 shrink-0" />
             <input
               type="tel"
-              placeholder="Your phone number (optional)"
+              placeholder="Your phone number (e.g. 9876543210)"
               value={contactInfo}
-              onChange={(e) => setContactInfo(e.target.value)}
+              onChange={(e) => {
+                cancelCountdown();
+                setUserModified((p) => ({ ...p, phone: true }));
+                setContactInfo(e.target.value);
+              }}
               className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-red-500"
             />
           </div>
@@ -805,7 +1234,10 @@ export default function ReportPage() {
                 />
                 <button
                   type="button"
-                  onClick={() => setPhotoData(null)}
+                  onClick={() => {
+                    cancelCountdown();
+                    setPhotoData(null);
+                  }}
                   className="absolute top-1 right-1 bg-slate-900/80 text-white rounded-full p-1 hover:bg-red-600 transition"
                   title="Remove photo"
                 >
