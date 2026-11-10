@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Siren, LayoutDashboard, PlusCircle } from "lucide-react";
+import { Siren, LayoutDashboard, PlusCircle, Users } from "lucide-react";
 
 export function Header() {
   const pathname = usePathname();
@@ -28,7 +28,7 @@ export function Header() {
           </Link>
 
           {/* Navigation Links */}
-          <nav className="flex items-center gap-2 sm:gap-4">
+          <nav className="flex items-center gap-2 sm:gap-3">
             <Link
               href="/"
               className={`px-3 py-2 rounded-xl text-sm font-semibold transition ${
@@ -43,13 +43,25 @@ export function Header() {
             <Link
               href="/admin"
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
-                pathname.startsWith("/admin")
+                pathname === "/admin" || (pathname.startsWith("/admin/incidents"))
                   ? "bg-navy-light text-cream"
                   : "text-cream/80 hover:text-cream hover:bg-navy-light/60"
               }`}
             >
               <LayoutDashboard className="h-4 w-4" />
-              <span>Admin Dashboard</span>
+              <span>Dashboard</span>
+            </Link>
+
+            <Link
+              href="/admin/teams"
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                pathname.startsWith("/admin/teams")
+                  ? "bg-navy-light text-cream"
+                  : "text-cream/80 hover:text-cream hover:bg-navy-light/60"
+              }`}
+            >
+              <Users className="h-4 w-4" />
+              <span>Response Teams</span>
             </Link>
 
             <Link

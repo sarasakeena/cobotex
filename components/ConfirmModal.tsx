@@ -9,6 +9,9 @@ interface ConfirmModalProps {
   message: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  confirmText?: string;
+  cancelText?: string;
+  isDanger?: boolean;
   isLoading?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -18,13 +21,19 @@ export function ConfirmModal({
   isOpen,
   title,
   message,
-  confirmLabel = "Delete Incident",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
+  confirmText,
+  cancelText,
+  isDanger = true,
   isLoading = false,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
   if (!isOpen) return null;
+
+  const resolvedConfirm = confirmText || confirmLabel || "Delete Incident";
+  const resolvedCancel = cancelText || cancelLabel || "Cancel";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy/60 backdrop-blur-sm animate-fadeIn">
@@ -55,22 +64,27 @@ export function ConfirmModal({
             type="button"
             onClick={onCancel}
             disabled={isLoading}
-            className="rounded-xl px-4 py-2 text-sm font-bold text-navy bg-cream hover:bg-cream-dark transition disabled:opacity-50 border border-slate/40"
+            className="rounded-xl border border-slate/40 bg-cream px-4 py-2 text-sm font-semibold text-navy hover:bg-slate-200 transition disabled:opacity-50"
           >
-            {cancelLabel}
+            {resolvedCancel}
           </button>
           <button
             type="button"
             onClick={onConfirm}
             disabled={isLoading}
-            className="inline-flex items-center gap-2 rounded-xl bg-burgundy px-4 py-2 text-sm font-bold text-cream hover:bg-burgundy-light active:bg-burgundy-hover transition shadow-sm disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-xl bg-burgundy px-4 py-2 text-sm font-bold text-cream hover:bg-burgundy-light transition shadow-sm disabled:opacity-50"
           >
             {isLoading ? (
-              <span className="h-4 w-4 border-2 border-cream border-t-transparent rounded-full animate-spin" />
+              <>
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-cream border-t-transparent" />
+                <span>Deleting...</span>
+              </>
             ) : (
-              <Trash2 className="h-4 w-4" />
+              <>
+                <Trash2 className="h-4 w-4" />
+                <span>{resolvedConfirm}</span>
+              </>
             )}
-            <span>{confirmLabel}</span>
           </button>
         </div>
       </div>

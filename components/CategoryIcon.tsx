@@ -11,28 +11,46 @@ import {
 interface CategoryIconProps {
   category: string;
   className?: string;
-  size?: number;
+  size?: number | "sm" | "md" | "lg";
 }
 
 export function CategoryIcon({
   category,
-  className = "w-5 h-5",
-  size,
+  className = "",
+  size = "md",
 }: CategoryIconProps) {
+  let pixelSize: number | undefined;
+  let defaultClass = "w-5 h-5";
+
+  if (typeof size === "number") {
+    pixelSize = size;
+    defaultClass = "";
+  } else if (size === "sm") {
+    pixelSize = 16;
+    defaultClass = "w-4 h-4";
+  } else if (size === "lg") {
+    pixelSize = 24;
+    defaultClass = "w-6 h-6";
+  } else {
+    pixelSize = 20;
+    defaultClass = "w-5 h-5";
+  }
+
+  const finalClass = `${defaultClass} ${className}`.trim();
+
   switch (category) {
     case "FIRE":
-      return <Flame className={`text-orange-500 ${className}`} size={size} />;
+      return <Flame className={`text-orange-500 ${finalClass}`} size={pixelSize} />;
     case "ROAD_ACCIDENT":
-      return <Car className={`text-amber-600 ${className}`} size={size} />;
+      return <Car className={`text-amber-600 ${finalClass}`} size={pixelSize} />;
     case "MEDICAL":
-      return <HeartPulse className={`text-rose-500 ${className}`} size={size} />;
+      return <HeartPulse className={`text-rose-500 ${finalClass}`} size={pixelSize} />;
     case "FLOOD":
-      return <Waves className={`text-blue-500 ${className}`} size={size} />;
+      return <Waves className={`text-blue-500 ${finalClass}`} size={pixelSize} />;
     case "BUILDING_COLLAPSE":
-      return <Building2 className={`text-purple-600 ${className}`} size={size} />;
+      return <Building2 className={`text-purple-600 ${finalClass}`} size={pixelSize} />;
     case "OTHER":
     default:
-      return <AlertTriangle className={`text-slate-500 ${className}`} size={size} />;
+      return <AlertTriangle className={`text-slate-500 ${finalClass}`} size={pixelSize} />;
   }
 }
-

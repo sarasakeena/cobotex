@@ -1,0 +1,297 @@
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+async function main() {
+  console.log("Seeding emergency response teams and sample incidents across Chennai...");
+
+  // 10 Teams spread across Chennai (2 each for FIRE, MEDICAL, RESCUE, POLICE, DISASTER)
+  const teams = [
+    {
+      code: "FIRE-01",
+      name: "T. Nagar Fire & Rescue Station",
+      category: "FIRE",
+      latitude: 13.0418,
+      longitude: 80.2341,
+      address: "Usman Road, T. Nagar, Chennai",
+      status: "AVAILABLE",
+    },
+    {
+      code: "FIRE-02",
+      name: "Kilpauk Fire Service Station",
+      category: "FIRE",
+      latitude: 13.0801,
+      longitude: 80.2405,
+      address: "Poonamallee High Rd, Kilpauk, Chennai",
+      status: "AVAILABLE",
+    },
+    {
+      code: "MEDICAL-01",
+      name: "Rajiv Gandhi GH Rapid Medical Unit",
+      category: "MEDICAL",
+      latitude: 13.0809,
+      longitude: 80.2785,
+      address: "EVR Periyar Salai, Park Town, Chennai",
+      status: "AVAILABLE",
+    },
+    {
+      code: "MEDICAL-02",
+      name: "Apollo Greams Critical Care Ambulance",
+      category: "MEDICAL",
+      latitude: 13.0567,
+      longitude: 80.2524,
+      address: "Greams Lane, Thousand Lights, Chennai",
+      status: "AVAILABLE",
+    },
+    {
+      code: "RESCUE-01",
+      name: "Marina Coastal & Urban Rescue Squad",
+      category: "RESCUE",
+      latitude: 13.0500,
+      longitude: 80.2824,
+      address: "Kamarajar Promenade, Marina, Chennai",
+      status: "AVAILABLE",
+    },
+    {
+      code: "RESCUE-02",
+      name: "Tambaram NDRF Heavy Rescue Unit",
+      category: "RESCUE",
+      latitude: 12.9249,
+      longitude: 80.1000,
+      address: "GST Road, Tambaram Sanatorium, Chennai",
+      status: "AVAILABLE",
+    },
+    {
+      code: "POLICE-01",
+      name: "Mylapore Rapid Police Response",
+      category: "POLICE",
+      latitude: 13.0368,
+      longitude: 80.2676,
+      address: "Kutchery Road, Mylapore, Chennai",
+      status: "AVAILABLE",
+    },
+    {
+      code: "POLICE-02",
+      name: "Anna Nagar Flying Police Patrol",
+      category: "POLICE",
+      latitude: 13.0850,
+      longitude: 80.2101,
+      address: "2nd Avenue, Anna Nagar, Chennai",
+      status: "AVAILABLE",
+    },
+    {
+      code: "DISASTER-01",
+      name: "SDRF Guindy Disaster Relief Battalion",
+      category: "DISASTER",
+      latitude: 13.0102,
+      longitude: 80.2158,
+      address: "Sardar Patel Road, Guindy, Chennai",
+      status: "AVAILABLE",
+    },
+    {
+      code: "DISASTER-02",
+      name: "Velachery Urban Flood Taskforce",
+      category: "DISASTER",
+      latitude: 12.9791,
+      longitude: 80.2185,
+      address: "Velachery Bypass Rd, Chennai",
+      status: "AVAILABLE",
+    },
+  ];
+
+  for (const team of teams) {
+    await prisma.team.upsert({
+      where: { code: team.code },
+      update: {},
+      create: team,
+    });
+  }
+  console.log(`✓ 10 Response teams verified/seeded.`);
+
+  const now = Date.now();
+  const minutesAgo = (mins: number) => new Date(now - mins * 60 * 1000);
+
+  // 10 Sample incidents across Chennai, created 5 to 120 mins ago, all REPORTED
+  const sampleIncidents = [
+    {
+      id: "seed-inc-01",
+      title: "Commercial Complex Structural Crack and Partial Wall Collapse",
+      description: "Outer facade and staircase collapse on second floor. Multiple patrons trapped on upper levels.",
+      category: "BUILDING_COLLAPSE",
+      location: "Arcot Road, Vadapalani, Chennai",
+      latitude: 13.0505,
+      longitude: 80.2120,
+      address: "Arcot Road, Vadapalani, Chennai",
+      tags: JSON.stringify(["Trapped inside", "Structural damage", "Debris"]),
+      peopleAffected: 14,
+      contactInfo: "9840112345",
+      severity: "CRITICAL",
+      status: "REPORTED",
+      createdAt: minutesAgo(12),
+    },
+    {
+      id: "seed-inc-02",
+      title: "Major Electrical Transformer Fire near Market",
+      description: "Heavy black smoke billowing into residential buildings. Sparks flying towards nearby shops.",
+      category: "FIRE",
+      location: "Ranganathan Street, T. Nagar, Chennai",
+      latitude: 13.0401,
+      longitude: 80.2312,
+      address: "Ranganathan Street, T. Nagar, Chennai",
+      tags: JSON.stringify(["Flames visible", "Dense smoke", "Electrical"]),
+      peopleAffected: 8,
+      contactInfo: "9840223456",
+      severity: "CRITICAL",
+      status: "REPORTED",
+      createdAt: minutesAgo(8),
+    },
+    {
+      id: "seed-inc-03",
+      title: "Multiple Vehicle Collision on Kathipara Flyover",
+      description: "Bus and two cars involved in chain accident. Traffic halted, fuel spill on tarmac.",
+      category: "ROAD_ACCIDENT",
+      location: "Kathipara Junction, Alandur, Chennai",
+      latitude: 13.0067,
+      longitude: 80.2033,
+      address: "Kathipara Junction, Alandur, Chennai",
+      tags: JSON.stringify(["Multiple vehicles", "Road blocked", "Fuel leak"]),
+      peopleAffected: 6,
+      contactInfo: "9840334567",
+      severity: "HIGH",
+      status: "REPORTED",
+      createdAt: minutesAgo(24),
+    },
+    {
+      id: "seed-inc-04",
+      title: "Cardiac Arrest and Breathing Distress in Train Station",
+      description: "Elderly commuter collapsed on platform 3. Pulse weak, CPR in progress by bystander.",
+      category: "MEDICAL",
+      location: "Chennai Central Railway Station, Park Town",
+      latitude: 13.0825,
+      longitude: 80.2755,
+      address: "EVR Salai, Chennai Central, Chennai",
+      tags: JSON.stringify(["Unconscious", "Severe injuries", "Elderly"]),
+      peopleAffected: 1,
+      contactInfo: "9840445678",
+      severity: "CRITICAL",
+      status: "REPORTED",
+      createdAt: minutesAgo(6),
+    },
+    {
+      id: "seed-inc-05",
+      title: "Flash Waterlogging & Submerged Residential Colony",
+      description: "Water level rose 4 feet rapidly due to canal breach. Over 30 residents stranded on terrace.",
+      category: "FLOOD",
+      location: "Baby Nagar, Velachery, Chennai",
+      latitude: 12.9812,
+      longitude: 80.2224,
+      address: "Baby Nagar, Velachery, Chennai",
+      tags: JSON.stringify(["Rising water level", "Stranded residents", "Power cut"]),
+      peopleAffected: 32,
+      contactInfo: "9840556789",
+      severity: "HIGH",
+      status: "REPORTED",
+      createdAt: minutesAgo(65),
+    },
+    {
+      id: "seed-inc-06",
+      title: "Two-Wheeler Skidded into Road Divider",
+      description: "Biker lost balance over gravel and sustained leg fractures. Conscious but bleeding.",
+      category: "ROAD_ACCIDENT",
+      location: "Poonamallee High Rd, Aminjikarai, Chennai",
+      latitude: 13.0722,
+      longitude: 80.2245,
+      address: "Poonamallee High Rd, Aminjikarai, Chennai",
+      tags: JSON.stringify(["Severe injuries"]),
+      peopleAffected: 2,
+      contactInfo: "9840667890",
+      severity: "MEDIUM",
+      status: "REPORTED",
+      createdAt: minutesAgo(38),
+    },
+    {
+      id: "seed-inc-07",
+      title: "Dry Grass Fire beside Industrial Warehouse",
+      description: "Empty plot caught fire, creeping towards perimeter wall of godown.",
+      category: "FIRE",
+      location: "Ambattur Industrial Estate, Chennai",
+      latitude: 13.0982,
+      longitude: 80.1611,
+      address: "Ambattur Industrial Estate, Chennai",
+      tags: JSON.stringify(["Dense smoke"]),
+      peopleAffected: 0,
+      contactInfo: "9840778901",
+      severity: "MEDIUM",
+      status: "REPORTED",
+      createdAt: minutesAgo(95),
+    },
+    {
+      id: "seed-inc-08",
+      title: "Old Compound Wall Collapsed onto Footpath",
+      description: "Dilapidated brick wall crumbled onto pedestrian pathway during high winds.",
+      category: "BUILDING_COLLAPSE",
+      location: "Royapettah High Rd, Mylapore, Chennai",
+      latitude: 13.0430,
+      longitude: 80.2605,
+      address: "Royapettah High Rd, Mylapore, Chennai",
+      tags: JSON.stringify(["Debris", "Road blocked"]),
+      peopleAffected: 1,
+      contactInfo: "9840889012",
+      severity: "MEDIUM",
+      status: "REPORTED",
+      createdAt: minutesAgo(110),
+    },
+    {
+      id: "seed-inc-09",
+      title: "Severe Allergic Shock and Breathing Difficulty at Restaurant",
+      description: "Customer having acute anaphylactic reaction after food intake. Needs urgent epipen/oxygen.",
+      category: "MEDICAL",
+      location: "Nungambakkam High Rd, Chennai",
+      latitude: 13.0601,
+      longitude: 80.2412,
+      address: "Nungambakkam High Rd, Chennai",
+      tags: JSON.stringify(["Unconscious", "Child/Infant"]),
+      peopleAffected: 1,
+      contactInfo: "9840990123",
+      severity: "HIGH",
+      status: "REPORTED",
+      createdAt: minutesAgo(18),
+    },
+    {
+      id: "seed-inc-10",
+      title: "Large Tree Uprooted Blocking Primary Lane",
+      description: "Banyan tree trunk down across street, severed telephone wires hanging low.",
+      category: "OTHER",
+      location: "Besant Nagar 2nd Avenue, Chennai",
+      latitude: 12.9984,
+      longitude: 80.2671,
+      address: "Besant Nagar 2nd Avenue, Chennai",
+      tags: JSON.stringify(["Road blocked"]),
+      peopleAffected: 0,
+      contactInfo: "9840001234",
+      severity: "LOW",
+      status: "REPORTED",
+      createdAt: minutesAgo(105),
+    },
+  ];
+
+  for (const inc of sampleIncidents) {
+    await prisma.incident.upsert({
+      where: { id: inc.id },
+      update: {},
+      create: inc,
+    });
+  }
+  console.log(`✓ 10 Sample incidents verified/seeded.`);
+  console.log("Seeding complete!");
+}
+
+main()
+  .catch((e) => {
+    console.error("Error seeding database:", e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
+

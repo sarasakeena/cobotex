@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculateSeverity, formatCategoryName, CategoryType } from "@/lib/severity";
+import { calculatePriority } from "@/lib/priority";
+
+export const dynamic = "force-dynamic";
 
 const VALID_CATEGORIES: CategoryType[] = [
   "FIRE",
@@ -11,7 +14,7 @@ const VALID_CATEGORIES: CategoryType[] = [
   "OTHER",
 ];
 
-// GET /api/incidents - List all incidents
+// GET /api/incidents - List all incidents with read-time priority and assigned team
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -32,19 +35,62 @@ export async function GET(request: NextRequest) {
 
     const incidents = await prisma.incident.findMany({
       where,
-      orderBy: {
-        createdAt: "desc",
+      include: {
+        assignedTeam: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            category: true,
+            status: true,
+          },
+        },
       },
     });
 
-    // Custom sorting: Critical incidents visually prioritized to top, then newest first
-    const sorted = [...incidents].sort((a, b) => {
-      if (a.severity === "CRITICAL" && b.severity !== "CRITICAL") return -1;
-      if (a.severity !== "CRITICAL" && b.severity === "CRITICAL") return 1;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    // Compute read-time dynamic priority for each incident
+    const withPriority = incidents.map((inc) => {
+      const prio = calculatePriority({
+        severity: inc.severity,
+        peopleAffected: inc.peopleAffected,
+        category: inc.category,
+        createdAt: inc.createdAt,
+        status: inc.status,
+      });
+
+      return {
+        ...inc,
+        priority: prio,
+      };
     });
 
-    return NextResponse.json(sorted);
+    // Default sort: Unresolved by priority descending, resolved at the bottom
+    withPriority.sort((a, b) => {
+      const aResolved = a.status === "RESOLVED";
+      const bResolved = b.status === "RESOLVED";
+
+      if (!aResolved && bResolved) return -1;
+      if (aResolved && !bResolved) return 1;
+
+      // Both unresolved or both resolved -> sort by priority score descending
+      if (b.priority.score !== a.priority.score) {
+        return b.priority.score - a.priority.score;
+      }
+
+      // Tie breaker: older created time first
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+
+    // Assign rank number to unresolved incidents
+    let currentRank = 1;
+    const finalResult = withPriority.map((inc) => {
+      if (inc.status !== "RESOLVED") {
+        return { ...inc, priorityRank: currentRank++ };
+      }
+      return { ...inc, priorityRank: null };
+    });
+
+    return NextResponse.json(finalResult);
   } catch (error) {
     console.error("Failed to fetch incidents:", error);
     return NextResponse.json(
@@ -100,93 +146,105 @@ export async function POST(request: NextRequest) {
     if (cleanAddress && !isAddressJunk) {
       resolvedLocation = cleanAddress;
     } else if (hasCoordinates) {
-      resolvedLocation = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-    } else if (
-      location &&
-      typeof location === "string" &&
-      location.trim() &&
-      location.trim().toLowerCase() !== cleanDesc.toLowerCase() &&
-      !/\b(?:please|use\s+my|current\s+location|my\s+location)\b/i.test(location.trim())
-    ) {
-      resolvedLocation = location.trim();
+      resolvedLocation = `${Number(latitude).toFixed(4)}, ${Number(longitude).toFixed(4)}`;
+    } else if (location && typeof location === "string" && location.trim().length > 0) {
+      const cleanLoc = location.trim();
+      const isLocJunk =
+        cleanLoc.length < 3 ||
+        /\b(?:please|use\s+my|current\s+location|my\s+location)\b/i.test(cleanLoc) ||
+        (cleanDesc.length > 0 && cleanLoc.toLowerCase() === cleanDesc.toLowerCase());
+
+      resolvedLocation = isLocJunk ? "Location Pending" : cleanLoc;
     } else {
-      errors.location = "Location is required (device coordinates, map pin, or address).";
+      errors.location = "Incident location or coordinates are required.";
+    }
+
+    // Validate Title
+    let finalTitle = title;
+    if (!finalTitle || typeof finalTitle !== "string" || !finalTitle.trim()) {
+      const catName = formatCategoryName(category || "OTHER");
+      const placeSnippet = resolvedLocation && resolvedLocation !== "Location Pending" ? ` at ${resolvedLocation}` : "";
+      finalTitle = `${catName} Incident${placeSnippet}`;
+    }
+
+    // Validate Description
+    if (!description || typeof description !== "string" || !description.trim()) {
+      errors.description = "Incident description is required.";
     }
 
     // Validate People Affected
-    const parsedPeople = parseInt(String(peopleAffected), 10);
-    if (isNaN(parsedPeople) || parsedPeople < 0) {
-      errors.peopleAffected = "Number of people affected must be a positive number (minimum 0).";
+    const numPeople = parseInt(String(peopleAffected), 10);
+    if (isNaN(numPeople) || numPeople < 0) {
+      errors.peopleAffected = "Number of people affected must be 0 or greater.";
     }
 
-    // Normalize tags
-    const cleanTags: string[] = Array.isArray(tags)
-      ? tags.map((t) => String(t).trim()).filter(Boolean)
-      : [];
-
+    // Return 400 if validation fails
     if (Object.keys(errors).length > 0) {
       return NextResponse.json(
-        { error: "Validation failed", errors },
+        {
+          error: "Validation failed",
+          fields: errors,
+        },
         { status: 400 }
       );
     }
 
-    // Auto-generate Title if not provided
-    const categoryLabel = formatCategoryName(category as CategoryType);
-    let resolvedTitle = title && typeof title === "string" && title.trim() ? title.trim() : "";
-    if (!resolvedTitle) {
-      resolvedTitle = cleanAddress && !isAddressJunk
-        ? `${categoryLabel} reported - ${cleanAddress}`
-        : `${categoryLabel} reported`;
-    }
+    // Process Tags
+    const parsedTags = Array.isArray(tags) ? tags.filter((t) => typeof t === "string") : [];
 
-    // Auto-generate Description if not provided
-    let resolvedDesc = cleanDesc;
-    if (!resolvedDesc) {
-      const tagSnippet = cleanTags.length > 0 ? ` ${cleanTags.join(", ")}.` : "";
-      resolvedDesc = `${categoryLabel} reported. ${parsedPeople} people affected.${tagSnippet}`;
-    }
-
-    // Compute Severity with pure function
+    // Calculate dynamic severity
     const severityResult = calculateSeverity({
       category: category as CategoryType,
-      peopleAffected: parsedPeople,
-      tags: cleanTags,
-      title: resolvedTitle,
-      description: resolvedDesc,
+      peopleAffected: numPeople,
+      tags: parsedTags,
+      title: finalTitle,
+      description: description.trim(),
     });
 
-    const incident = await prisma.incident.create({
+    // Save to Database
+    const newIncident = await prisma.incident.create({
       data: {
-        title: resolvedTitle,
-        description: resolvedDesc,
-        category: category as any,
+        title: finalTitle.trim(),
+        description: description.trim(),
+        category,
         location: resolvedLocation,
         latitude: hasCoordinates ? latitude : null,
         longitude: hasCoordinates ? longitude : null,
-        address: cleanAddress && !isAddressJunk ? cleanAddress : (hasCoordinates ? `${latitude.toFixed(4)}, ${longitude.toFixed(4)}` : null),
-        tags: JSON.stringify(cleanTags),
+        address: cleanAddress && !isAddressJunk ? cleanAddress : null,
+        tags: JSON.stringify(parsedTags),
         photo: photo && typeof photo === "string" ? photo : null,
-        peopleAffected: parsedPeople,
-        contactInfo: contactInfo ? String(contactInfo).trim() : null,
-        severity: severityResult.severity as any,
+        peopleAffected: numPeople,
+        contactInfo: contactInfo && typeof contactInfo === "string" ? contactInfo.trim() : null,
+        severity: severityResult.severity,
         status: "REPORTED",
       },
+      include: {
+        assignedTeam: true,
+      },
+    });
+
+    const priorityResult = calculatePriority({
+      severity: newIncident.severity,
+      peopleAffected: newIncident.peopleAffected,
+      category: newIncident.category,
+      createdAt: newIncident.createdAt,
+      status: newIncident.status,
     });
 
     return NextResponse.json(
       {
-        ...incident,
-        tags: cleanTags,
+        ...newIncident,
+        tags: parsedTags,
         severityScore: severityResult.score,
         severityReasons: severityResult.reasons,
+        priority: priorityResult,
       },
       { status: 201 }
     );
   } catch (error) {
     console.error("Failed to create incident:", error);
     return NextResponse.json(
-      { error: "Failed to record incident report" },
+      { error: "Internal server error creating incident report" },
       { status: 500 }
     );
   }
