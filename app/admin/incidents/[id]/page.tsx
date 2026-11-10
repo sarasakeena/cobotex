@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -31,6 +32,18 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { CategoryIcon } from "@/components/CategoryIcon";
 import { ConfirmModal } from "@/components/ConfirmModal";
+
+const IncidentDetailMap = dynamic(
+  () => import("@/components/IncidentDetailMap"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-80 rounded-2xl bg-cardBg border border-slate/40 flex items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate/40 border-t-burgundy" />
+      </div>
+    ),
+  }
+);
 
 interface IncidentDetail {
   id: string;
@@ -571,6 +584,13 @@ export default function IncidentDetailPage() {
               </div>
             )}
           </div>
+
+          {/* Interactive Geospatial Route Map */}
+          <IncidentDetailMap
+            incident={incident}
+            assignedTeam={incident.assignedTeam}
+            candidateTeams={candidates}
+          />
         </div>
 
         {/* Right Column (1 Col): Response Team Assignment & Priority Engine */}

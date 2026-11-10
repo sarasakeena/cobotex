@@ -3,9 +3,8 @@
 import React, { useEffect } from "react";
 import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
 import L from "leaflet";
-import "leaflet/dist/leaflet.css";
 
-// Fix custom icon for Leaflet without broken static asset URLs
+// Custom L.divIcon circular pin
 const customMarkerIcon = L.divIcon({
   className: "custom-leaflet-pin",
   html: `
@@ -23,6 +22,8 @@ const customMarkerIcon = L.divIcon({
 interface MapPickerProps {
   position: { lat: number; lng: number } | null;
   onPositionChange: (pos: { lat: number; lng: number }) => void;
+  heightClassName?: string;
+  hintText?: string;
 }
 
 function LocationMarker({
@@ -53,12 +54,14 @@ function LocationMarker({
 export default function MapPicker({
   position,
   onPositionChange,
+  heightClassName = "h-64",
+  hintText = "Tap anywhere on the map to place location pin",
 }: MapPickerProps) {
-  // Default center: if coordinates given use them, else fallback to a default view (e.g. New Delhi / generic city)
-  const defaultCenter = position || { lat: 28.6139, lng: 77.209 };
+  // Default center (Chennai)
+  const defaultCenter = position || { lat: 13.0827, lng: 80.2707 };
 
   return (
-    <div className="w-full h-64 rounded-xl overflow-hidden border border-slate-300 shadow-inner relative z-0">
+    <div className={`w-full ${heightClassName} rounded-xl overflow-hidden border border-slate/40 shadow-inner relative z-0`}>
       <MapContainer
         center={[defaultCenter.lat, defaultCenter.lng]}
         zoom={13}
@@ -74,10 +77,9 @@ export default function MapPicker({
           onPositionChange={onPositionChange}
         />
       </MapContainer>
-      <div className="absolute bottom-2 left-2 z-[400] bg-slate-900/80 text-white text-[11px] px-2.5 py-1 rounded-md backdrop-blur-sm pointer-events-none">
-        Tap anywhere on the map to place incident pin
+      <div className="absolute bottom-2 left-2 z-[400] bg-navy/90 text-cream text-[11px] font-bold px-2.5 py-1 rounded-md backdrop-blur-sm pointer-events-none border border-navy-light/40 shadow-sm">
+        {hintText}
       </div>
     </div>
   );
 }
-

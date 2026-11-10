@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Siren, LayoutDashboard, PlusCircle, Users } from "lucide-react";
+import { Siren, LayoutDashboard, PlusCircle, Users, Map } from "lucide-react";
 
 export function Header() {
   const pathname = usePathname();
@@ -43,13 +43,25 @@ export function Header() {
             <Link
               href="/admin"
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
-                pathname === "/admin" || (pathname.startsWith("/admin/incidents"))
+                pathname === "/admin" || pathname.startsWith("/admin/incidents")
                   ? "bg-navy-light text-cream"
                   : "text-cream/80 hover:text-cream hover:bg-navy-light/60"
               }`}
             >
               <LayoutDashboard className="h-4 w-4" />
               <span>Dashboard</span>
+            </Link>
+
+            <Link
+              href="/admin/map"
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition ${
+                pathname === "/admin/map"
+                  ? "bg-navy-light text-cream"
+                  : "text-cream/80 hover:text-cream hover:bg-navy-light/60"
+              }`}
+            >
+              <Map className="h-4 w-4" />
+              <span>Live Map</span>
             </Link>
 
             <Link
@@ -61,7 +73,7 @@ export function Header() {
               }`}
             >
               <Users className="h-4 w-4" />
-              <span>Response Teams</span>
+              <span>Teams</span>
             </Link>
 
             <Link

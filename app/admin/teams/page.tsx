@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
   Users,
@@ -21,6 +22,15 @@ import {
   LocateFixed,
   X,
 } from "lucide-react";
+
+const MapPicker = dynamic(() => import("@/components/MapPicker"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-44 rounded-xl bg-cream border border-slate/40 flex items-center justify-center text-xs font-bold text-navy">
+      Loading staging map...
+    </div>
+  ),
+});
 
 interface TeamItem {
   id: string;
@@ -565,6 +575,26 @@ export default function TeamsManagementPage() {
                     onChange={(e) => setLongitude(e.target.value)}
                     placeholder="Longitude (e.g. 80.2707)"
                     className="w-full rounded-xl border border-slate/40 bg-cream px-3 py-2 text-xs font-bold text-navy placeholder:text-slate focus:border-burgundy focus:outline-none"
+                  />
+                </div>
+
+                {/* Small Map for Clicking to Set Coordinates */}
+                <div className="mt-2.5">
+                  <MapPicker
+                    position={
+                      latitude &&
+                      longitude &&
+                      !isNaN(parseFloat(latitude)) &&
+                      !isNaN(parseFloat(longitude))
+                        ? { lat: parseFloat(latitude), lng: parseFloat(longitude) }
+                        : null
+                    }
+                    onPositionChange={(pos) => {
+                      setLatitude(pos.lat.toFixed(6));
+                      setLongitude(pos.lng.toFixed(6));
+                    }}
+                    heightClassName="h-44"
+                    hintText="Click anywhere on the map to set base coordinates"
                   />
                 </div>
               </div>

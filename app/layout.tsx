@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Header } from "@/components/Header";
+import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -21,7 +22,7 @@ export default function RootLayout({
         <footer className="border-t border-slate/30 bg-cardBg py-6 text-center text-xs text-navy/70">
           <div className="max-w-7xl mx-auto px-4">
             <p className="font-medium">
-              CRISISPULSE Emergency Response Platform &bull; Round 1: Emergency Incident Reporting &amp; Monitoring
+              CRISISPULSE Emergency Response Platform &bull; Round 2: Intelligent Emergency Coordination Platform
             </p>
           </div>
         </footer>
